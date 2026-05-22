@@ -1,0 +1,44 @@
+# Project-default workflow schema: the built-in spec-driven (proposal -> specs ->
+# design -> tasks). ADRs are owned by the spec-driven-architecture schema (run via
+# --schema): it drafts them in the change and promotes them to docs/adr/. A durable
+# decision that surfaces during feature work gets routed through a
+# spec-driven-architecture change, not a hand-forked adr step here. The parked
+# spec-driven-with-adr/ schema folder is no longer the default; it stays selectable
+# only if explicitly passed via --schema.
+schema: spec-driven
+
+# context is injected into every artifact generation; rules are injected per
+# artifact (specs/design/tasks). Keep this the artifact-writing-relevant subset
+# of CLAUDE.md and the accepted ADRs, not a full copy - avoid drift.
+context: |
+  Wisery CRM - an AI-native agentic CRM for hyper-personalized outreach.
+
+  Thesis: automate the intelligence (research, qualify, enrich, personalize, track),
+  keep the action human. Minimal interface + generative outputs; hand-built anchor
+  views exist only where judgment lives (ICP/profile config, lead list, approve queue).
+  Built single-user first, but everything personal is per-tenant config-as-data.
+
+  Primary operating persona: the CRM user (a freelancer, solopreneur, developer, consultant, or other operator) who runs outreach for their own book of
+  business (single-tenant-first). Core domain fan-out: one upstream signal can fan
+  out to many prospects.
+
+  Stack: TypeScript 5 strict, Node 22, Next.js 16 (App Router; React 19 Server
+  Components by default), Tailwind 4, Drizzle ORM + managed Postgres, pg-boss run
+  in-process via instrumentation.ts, Zod, pino, @anthropic-ai/sdk, Vitest. No Redis.
+
+  Writing: no em-dashes (use short hyphens with spaces). Comment WHY, not WHAT.
+
+rules:
+  specs:
+    - Write requirements as user-facing product behavior and observable outcomes, not internal mechanics.
+    - Put internal mechanisms in design.md or tasks.md unless the mechanism is itself part of the product contract.
+    - Every requirement needs at least one scenario; scenarios use exactly four hashtags.
+    - A capability's canonical spec (openspec/specs/<capability>/spec.md) MAY carry an `## Architecture` section after Purpose linking - never duplicating - its architectural home, namely the relevant docs/architecture/ docs or the docs/product-overview.md spine, plus the docs/adr/ entries that govern it. The section is optional (the architecture schema is opt-in; omit it when there is nothing to point at), but any links it has must resolve and stay current - maintain them on the canonical spec, since a delta does not carry the section through archive.
+  design:
+    - Honor accepted ADRs in docs/adr/ (they are immutable); to diverge, say so explicitly in Decisions and record a superseding ADR via a spec-driven-architecture change (this schema has no adr step).
+    - Server Components by default; 'use client' needs a stated reason. Use server-only for modules that must never reach the client bundle.
+    - Anthropic Structured Outputs over tool_use for any LLM call returning data; prompts live in src/prompts/<name>_v<n>.ts.
+  tasks:
+    - Drizzle migrations are immutable once applied; a change means a new migration.
+    - For prompts over 1024 tokens, set cache_control ephemeral with ttl 1h explicitly.
+    - Each task must be independently verifiable.

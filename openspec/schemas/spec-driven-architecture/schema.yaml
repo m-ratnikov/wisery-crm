@@ -1,0 +1,413 @@
+name: spec-driven-architecture
+version: 1
+description: >
+  Architecture-shaping workflow (pre-code). Generates a coherent bundle of
+  architecture views - use cases, domain model, system design, deployment - as
+  drafts in the change folder, distills durable decisions into ADR drafts, then
+  promotes the ratified bundle - views into docs/architecture/, ADRs into docs/adr/
+  (where they become immutable) - into the canonical living docs at apply.
+  proposal -> use-cases -> domain-model -> system-design -> (deployment) -> adr -> tasks.
+  The change folder is the review unit ("a PR for your architecture"); apply
+  integrates it into docs/product-overview.md and docs/architecture/.
+# Maintainer note: each artifact's `instruction` carries intent and constraints; the
+# matching file in templates/ is the source of truth for section STRUCTURE - add or
+# rename a section in the template first, then reconcile the instruction. Keep the
+# schema portable: project-specific domain vocabulary belongs in openspec/config.yaml
+# `context` (injected into every artifact), not hard-coded in these instructions.
+artifacts:
+  - id: proposal
+    generates: proposal.md
+    description: Frames the slice of architecture this change shapes
+    template: proposal.md
+    instruction: >
+      Create the proposal that frames WHAT slice of the product's architecture
+      this change shapes and WHY now. This is not a code change - no behavior
+      ships from it. The output is clarified architecture.
+
+
+      Sections:
+
+      - **Why**: 1-2 sentences. What is unclear, contested, or missing in the
+      current architecture that this change resolves? Reference the current
+      state in docs/product-overview.md and any open question it closes.
+
+      - **Scope**: The slice being shaped (e.g., "the signal-to-prospect data
+      model and pipeline", "the deployment topology"). Be explicit about what is
+      IN and what is OUT - architecture work sprawls without a fence.
+
+      - **Views**: Which downstream views this change will produce. Mark each
+      Required or Skip with one line of justification. A view marked Skip still
+      runs as a step but writes only a minimal "out of scope for this change" note
+      instead of a full view, so a small change need not pay for the full bundle:
+        - `use-cases` - actors and the goals they pursue across the system boundary (Required for anything user-facing; Skip for a pure infra or internal-mechanics tweak).
+        - `domain-model` - entities, relationships, lifecycle, events (Required if any data/entity shape is in scope; Skip if no entity shape changes).
+        - `system-design` - C4 context/container, runtime flows (Required if boundaries or external systems are in scope).
+        - `deployment` - infra topology (Skip unless where-things-run changes).
+      - **Quality attributes**: The architecturally-significant quality requirements
+      this slice must meet - performance/latency, availability/durability,
+      security/privacy, cost, scale. A prioritized handful phrased as targets or
+      scenarios, not every attribute; they constrain the views and become checks in
+      the use-cases' acceptance signals. Write "n/a this slice" if none genuinely apply.
+      - **Impact on canon**: Name the specific living-canon homes this change will
+      revise at apply time, BY SCOPE - the draft views get re-sliced into these at
+      promotion, not copied file-to-file. List explicitly:
+        - overview: which docs/product-overview.md sections (locked-decisions table, pipeline diagram, MVP scope, open questions, durable personas/journey).
+        - system-wide views: which of docs/architecture/{glossary,system-context,cross-cutting,deployment}.md (these hold exactly one copy of system-wide content).
+        - area views: which docs/architecture/areas/<area>/{domain-model,system-design}.md (one folder per area/subdomain; many spec capabilities map into one area; create the folder if new).
+        - ADRs: expected docs/adr/ entries.
+      Only structural, current-state content lands in living canon; this proposal,
+      use cases, and tasks stay with the archived change folder as history. This list
+      is the contract the tasks artifact later fulfills.
+
+
+      Keep it to 1 page. Focus on the question being answered, not the answer -
+      the answer lives in the view artifacts.
+
+
+      Conventions: no em-dashes (use " - "). Diagrams later are Mermaid.
+    requires: []
+  - id: use-cases
+    generates: use-cases.md
+    description: Actors, use-case briefs, the primary journey, and acceptance signals
+    template: use-cases.md
+    instruction: >
+      Define WHO the architecture serves and the goals they pursue across the
+      system boundary. This grounds every downstream view - an actor or boundary
+      that serves no use case is suspect.
+
+
+      If the proposal marked `use-cases` Skip, write only a one-line note that this
+      change is not user-facing and the step completes; do not invent actors.
+
+
+      Use cases here are USER-GOAL level (Cockburn "sea level"): each is a complete
+      goal an actor achieves in one sitting, written as a brief - not a formal spec,
+      no preconditions/postconditions ceremony. They are deliberately NOT Agile user
+      stories (those are backlog-sized increments at the wrong altitude for
+      architecture); the actors named here are the same actors the C4 system context
+      in system-design.md will show.
+
+
+      Sections:
+
+      - **Actors**: Each actor that touches the system in this slice. Lead with the
+      primary operating persona named in the project context; name external/system
+      actors (an end recipient, an upstream data source, a third-party API) only
+      where they drive a use case. One line each on who they are and what they want.
+
+      - **Use cases**: A handful of user-goal-level briefs, not a backlog. For each:
+      `### UC<n>: <goal> (<primary actor>)` then one line of **Main success** (how
+      the actor achieves the goal across the boundary), and **Alternates/exceptions**
+      only where one is architecturally significant (forces a boundary, a failure
+      mode, or an entity). Keep to the goals this slice must serve.
+
+      - **Primary journey**: The main end-to-end flow as a numbered sequence of
+      steps (the daily loop). Note at each step which anchor view or background
+      job is involved. This journey is what system-design's runtime flow and
+      domain-model's lifecycle must both support - keep the three consistent.
+
+      - **Acceptance signals**: For the key use cases, one line each on how you
+      would know the architecture supports it (a question the design must be
+      able to answer "yes" to). Where a quality attribute from the proposal bears
+      on a use case, state the check against it. These are descriptive checks, not
+      SHALL specs.
+
+
+      Conventions: no em-dashes (use " - ").
+    requires:
+      - proposal
+  - id: domain-model
+    generates: domain-model.md
+    description: Glossary, ERD, entity lifecycle, and domain events
+    template: domain-model.md
+    instruction: >
+      Define WHAT exists in the domain and HOW it changes over time. This is the
+      load-bearing view - get the entities and the one-to-many fan-outs right
+      and downstream rework is cheap; get them wrong and it is a migration.
+
+
+      If the proposal marked `domain-model` Skip, write only a one-line note that
+      no entity shape changes in this change and the step completes; do not invent
+      entities. Otherwise:
+
+
+      Read use-cases.md first; every entity should trace to something an actor
+      does in a use case. Read docs/product-overview.md for entities already implied.
+
+
+      Sections:
+
+      - **Glossary**: The canonical noun for each domain concept, one line each.
+      One term per concept - kill synonyms now. This becomes the shared
+      vocabulary the other views and the code must use.
+
+      - **Entity model (ERD)**: A Mermaid `erDiagram`. Every entity, its key
+      attributes (not every column - the shape), and every relationship with
+      cardinality. Call out fan-outs explicitly (e.g., one upstream record fanning
+      out to many downstream records). Distinguish config-as-data entities (rubrics, profiles) from
+      runtime entities. After the diagram, a short note per non-obvious
+      relationship explaining why that cardinality.
+
+      - **Lifecycle**: For the core entity (the one that moves through the
+      pipeline), a Mermaid `stateDiagram-v2` of its states and transitions.
+      Name the trigger on each transition. This must line up with the primary
+      journey in use-cases.md and the runtime flow in system-design.md.
+
+      - **Domain events**: A table of the events that drive the system: event
+      name (past tense), what triggers it, the state change or read-model it
+      produces, and (if relevant) the background-job stage it maps to. This is
+      the lightweight event-storming pass; it doubles as the job-stage map.
+
+
+      These are descriptive models, not normative SHALL/MUST requirements - this
+      schema is for shaping architecture, not writing testable specs.
+
+
+      Conventions: Mermaid for all diagrams. No em-dashes (use " - ").
+    requires:
+      - use-cases
+  - id: system-design
+    generates: system-design.md
+    description: C4 context and container views, plus key runtime flows
+    template: system-design.md
+    instruction: >
+      Define the STRUCTURE: the system's boundaries, the external systems it
+      depends on, the internal containers, and how a request or job actually
+      flows through them. This view subsumes a "services map" - do not create a
+      separate one.
+
+
+      Read docs/adr/ first and honor the architectural decisions already in
+      force (job runtime, logging, configuration, and any others). If this
+      design must diverge from an in-force ADR, say so explicitly here so the
+      adr step can supersede it.
+
+
+      Sections:
+
+      - **System context (C4 L1)**: A Mermaid diagram (use `C4Context`, or a
+      `flowchart` if you want broader rendering support) showing the system as
+      one box, the human actors, and every external system it talks to (data
+      sources, enrichment providers, LLM API, datastore). One line per external
+      dependency on what crosses the boundary.
+
+      - **Containers (C4 L2)**: A Mermaid diagram of the deployable/runnable
+      units inside the system (e.g., the web app, in-process workers, the
+      datastore, any sidecar) and the protocols between them. Honor the runtime
+      decision in the relevant ADR rather than re-deciding it. Do NOT go to
+      component (L3) or code (L4) level - that is premature pre-code.
+
+      - **Key runtime flows**: 1-3 Mermaid `sequenceDiagram`s for the flows that
+      carry the most risk or judgment (e.g., the qualify-then-gate flow, the
+      human review-and-act flow). Each must be consistent with the lifecycle in
+      domain-model.md and the journey in use-cases.md.
+
+      - **Decisions and trade-offs**: For the load-bearing structural choices made
+      above that carried real alternatives, record the alternative(s) weighed and
+      why this option won, with the trade-off knowingly accepted. This is where
+      rationale is reasoned before the adr step freezes the durable ones into an
+      ADR - an ADR with no habitat for its alternatives is a decision without an
+      audit trail.
+
+      - **Cross-cutting concerns**: Brief notes on where observability, config,
+      secrets, failure handling, trust boundaries (authn/authz, which boundaries
+      are untrusted), data sensitivity (PII/sensitive classes and where they flow),
+      and scaling/capacity live - pointing to ADRs where decided. Keep the scaling
+      hook here so it survives even when deployment is skipped.
+
+
+      Conventions: Mermaid for all diagrams. No em-dashes (use " - ").
+    requires:
+      - domain-model
+  - id: deployment
+    generates: deployment.md
+    description: Infrastructure and deployment topology (conditional)
+    template: deployment.md
+    instruction: >
+      Create this ONLY if where-things-run is part of this change's scope (the
+      proposal marked deployment Required). If skipped, the step still completes;
+      do not invent infrastructure that is not being decided.
+
+
+      When in scope, define the deployment topology:
+
+      - **Topology**: A Mermaid diagram of the runtime environment - the host(s)
+      or platform the app runs on, the managed datastore, any external worker or
+      proxy box, and the network boundaries between them.
+
+      - **Where each container runs**: Map each container from system-design.md
+      to where it executes (in-process, separate process, external SaaS,
+      self-hosted box). Surface anything that is currently only implicit.
+
+      - **Secrets and config**: Where secrets live and how they reach each
+      container at runtime. Point to the configuration ADR.
+
+      - **Scaling and multi-tenant hook**: The path from the current shape to the
+      productized shape, if the product-overview names one (e.g., the
+      tenant DB topology). Just the hook, not the full build-out.
+
+
+      Read docs/adr/ first and honor in-force infrastructure decisions.
+
+
+      Conventions: Mermaid for all diagrams. No em-dashes (use " - ").
+    requires:
+      - system-design
+  - id: adr
+    generates: adr/*.md
+    description: Architecture Decision Records drafted from the views; promoted to docs/adr/ at apply
+    template: adr.md
+    instruction: >
+      Draft the Architecture Decision Records this change introduces as files inside
+      THIS change's folder at openspec/changes/<change>/adr/. They are promoted to
+      the repository's canonical <repo>/docs/adr/ at apply time (the tasks artifact
+      carries the promotion step). Drafting in the change folder keeps the ADR part
+      of the reviewable change unit and lets the engine track this step by the file
+      it actually creates; promotion to docs/adr/ is where a decision becomes
+      canonical.
+
+
+      IRON RULE - an ADR is immutable once it is ACCEPTED in docs/adr/. A draft in
+      this change's adr/ folder may still be revised while the change is under
+      review, but once promoted and accepted you MUST NOT edit it (not its Status,
+      body, date, nothing). To change a previously accepted decision, record a NEW
+      ADR whose Status is "accepted, supersedes ADR-NNNN" and whose Supersedes field
+      names the prior one. Consumers derive what is currently in force by walking
+      Supersedes links across docs/adr/; the prior ADR's contents stay frozen as a
+      historical record.
+
+
+      Process:
+
+
+      1. Read every existing ADR in <repo>/docs/adr/ and any draft already in this
+      change's adr/ folder. Build the supersession graph from each ADR's Supersedes
+      field. Note the highest sequence number in use across docs/adr/.
+
+
+      2. Re-read this change's views (system-design.md - especially its Decisions
+      and trade-offs section - domain-model.md, and deployment.md if present).
+      Identify decisions that meet ALL of these: establish a long-term architectural
+      commitment (pattern, technology, boundary, contract, data-model invariant)
+      rather than a tactical detail; will affect future changes beyond this one; and
+      either aren't already captured by a currently-in-force ADR, or intentionally
+      diverge from one (in which case the new ADR supersedes the prior).
+
+
+      3. For each qualifying decision, create a NEW draft file at
+      openspec/changes/<change>/adr/NNNN-kebab-title.md, where NNNN is a 4-digit
+      sequence one greater than the highest existing in docs/adr/ (the promotion
+      step reconfirms the number, since another change may land first). Use the
+      adr.md template (Nygard format: Context, Decision, Consequences; concise, not
+      a research log) and fill the Source field with the explore note or the
+      system-design section this distills. If this decision replaces a prior
+      in-force ADR, set Status to "accepted, supersedes ADR-NNNN", populate
+      Supersedes, and explain in Context why the prior decision is being revisited.
+      Do NOT touch any file under docs/adr/ in this step - promotion handles that.
+
+
+      4. If no decision meets the bar, do not invent ADRs. Instead write a single
+      openspec/changes/<change>/adr/none.md containing one line stating no
+      ADR-worthy decisions arose, so the step still completes and the tasks step
+      knows there is nothing to promote.
+
+
+      Filename convention: NNNN-kebab-title.md (e.g., 0004-prospect-fan-out.md).
+      Sequence is monotonic across docs/adr/ and never reused.
+    requires:
+      - system-design
+  - id: tasks
+    generates: tasks.md
+    description: Integration checklist - promote the ratified bundle into canonical docs
+    template: tasks.md
+    instruction: >
+      Create the integration checklist that apply will work through to promote
+      this change's drafted views into the canonical living docs. These are not
+      code tasks - each one moves a ratified draft from the change folder into
+      docs/.
+
+
+      **IMPORTANT: Follow the template format exactly.** The apply phase parses
+      checkbox format to track progress. Tasks not using `- [ ]` won't be
+      tracked.
+
+
+      Build the checklist from the proposal's "Impact on canon" section. Group
+      tasks under ## numbered headings and order by dependency:
+
+      - **Cross-view consistency check**: gate tasks (not docs) that confirm the
+      drafted views agree before anything is promoted - e.g., every domain event
+      maps to a lifecycle transition, every use case traces to an entity,
+      every container appears in deployment (when deployment is in scope).
+
+      - **Reconcile the spine**: tasks to update the specific sections of
+      docs/product-overview.md this change touches (the locked-decisions
+      table, the pipeline diagram, MVP scope, open questions, and any durable
+      personas/primary-journey). Name the sections.
+
+      - **Distribute the views by scope**: promotion is NOT a file-to-file copy.
+      Re-slice each drafted view's sections into the living-canon home matching its
+      SCOPE, keeping exactly one copy of system-wide content. One task per
+      destination touched:
+        - domain-model.md: Glossary -> the shared docs/architecture/glossary.md (or the overview until it grows); ERD / lifecycle / domain events -> docs/architecture/areas/<area>/domain-model.md.
+        - system-design.md: C4 L1 system context -> docs/architecture/system-context.md (or the overview); C4 L2 containers + runtime flows -> docs/architecture/areas/<area>/system-design.md; cross-cutting -> docs/architecture/cross-cutting.md (or the overview); Decisions and trade-offs -> the ADR step, not a view doc.
+        - deployment.md (if present) -> docs/architecture/deployment.md.
+      `<area>` is the subdomain this slice belongs to (e.g. signals, qualification);
+      create the area folder if new, and start flat (a single implicit area at the
+      top of docs/architecture/) until the model grows enough to split. use-cases.md is
+      NOT promoted - durable behavior becomes OpenSpec specs, and the change folder is
+      the archived record for the rest.
+
+      - **Promote ADRs**: a task to move each ADR drafted in this change's adr/
+      folder into docs/adr/ with the next free 4-digit sequence number (reconfirm
+      it against docs/adr/ in case another change landed first), then cross-link
+      from the spine. Once in docs/adr/ they are immutable - do not rewrite them.
+      If the adr step produced only adr/none.md, note there is nothing to promote.
+
+      - **Cross-link**: tasks to wire links between the overview, the view docs,
+      and the ADRs so the canon is navigable.
+
+
+      Each task must be a checkbox: `- [ ] X.Y Task description`, small enough to
+      finish in one session, and verifiable.
+
+
+      Conventions: no em-dashes (use " - ").
+    requires:
+      - use-cases
+      - domain-model
+      - system-design
+      - adr
+apply:
+  requires:
+    - tasks
+  tracks: tasks.md
+  instruction: |
+    Promote this change's ratified architecture into the canonical living docs.
+
+    Read the change's draft views (use-cases.md, domain-model.md, system-design.md,
+    deployment.md if present), the ADR drafts in this change's adr/ folder, and the
+    CURRENT canonical docs (docs/product-overview.md and any
+    docs/architecture/*.md). Then work through the pending tasks in tasks.md,
+    marking each complete as you go.
+
+    Run the cross-view consistency gate tasks first; if a view disagrees with
+    another, pause and surface it rather than promoting an inconsistent bundle.
+
+    For each remaining task: integrate the drafted content into the living-canon
+    home named by the task. Promotion re-slices BY SCOPE, not file-to-file: a draft
+    view's system-wide sections (glossary, C4 L1 context, cross-cutting) go to the
+    overview or the single shared docs/architecture/{glossary,system-context,
+    cross-cutting}.md, while its area-specific sections go to
+    docs/architecture/areas/<area>/{domain-model,system-design}.md (create
+    docs/architecture/ and the area folder if missing). Keep exactly one copy of
+    system-wide content - never duplicate it per area. Promote each ADR draft by
+    moving it from the change's adr/ folder to docs/adr/NNNN-*.md with the next free
+    sequence number; once in docs/adr/ it is immutable, so never edit an accepted ADR
+    while promoting. If the adr step produced only adr/none.md, there is nothing to
+    promote. The proposal, use cases, and tasks are not promoted - they remain with the
+    change folder, which archive preserves as history.
+
+    Pause if a draft conflicts with the current canon in a way that needs a human
+    decision, or if promoting would contradict an in-force ADR. Do not silently
+    overwrite - surface the conflict.
