@@ -216,6 +216,13 @@ artifacts:
       hook here so it survives even when deployment is skipped.
 
 
+      Claim grounding: anchor every non-trivial claim with an HTML comment - `<!-- v:fact
+      <source> -->`, `<!-- v:derives <ADR-N / D-N / section> -->`, or `<!-- v:decision -->` /
+      `<!-- v:assumption -->` (a novel claim must be a falsifiable invariant, else omit it).
+      Anchors render invisibly and are stripped to a clean view at promotion; an un-anchored
+      claim is treated as unsupported at the verification gate (docs/verification-gate.md).
+
+
       Conventions: Mermaid for all diagrams. No em-dashes (use " - ").
     requires:
       - domain-model
@@ -314,6 +321,13 @@ artifacts:
 
       Filename convention: NNNN-kebab-title.md (e.g., 0004-prospect-fan-out.md).
       Sequence is monotonic across docs/adr/ and never reused.
+
+
+      Claim grounding: anchor every non-trivial claim in Context / Decision / Consequences with
+      an HTML comment - `<!-- v:fact <source> -->`, `<!-- v:derives <ADR-N / D-N / section> -->`,
+      or `<!-- v:decision -->` / `<!-- v:assumption -->` (a novel claim stated as a falsifiable
+      invariant). The verification gate (docs/verification-gate.md) treats un-anchored assertions
+      as unsupported and blocks promotion on them.
     requires:
       - system-design
   - id: tasks
@@ -338,7 +352,11 @@ artifacts:
       - **Cross-view consistency check**: gate tasks (not docs) that confirm the
       drafted views agree before anything is promoted - e.g., every domain event
       maps to a lifecycle transition, every use case traces to an entity,
-      every container appears in deployment (when deployment is in scope).
+      every container appears in deployment (when deployment is in scope). Include a
+      verification-gate task here: /verify-gate has passed for each view and ADR being
+      promoted (groundedness ledger clean, Chair verdict not rework, the record's
+      git hash-object matches current content, and human sign-off recorded for ADRs),
+      per docs/verification-gate.md.
 
       - **Reconcile the spine**: tasks to update the specific sections of
       docs/product-overview.md this change touches (the locked-decisions
@@ -347,7 +365,9 @@ artifacts:
 
       - **Distribute the views by scope**: promotion is NOT a file-to-file copy.
       Re-slice each drafted view's sections into the living-canon home matching its
-      SCOPE, keeping exactly one copy of system-wide content. One task per
+      SCOPE, keeping exactly one copy of system-wide content. Include a task to strip the
+      verification anchors (the `<!-- v:... -->` comments) from each promoted view - the clean
+      canon view is generated from the anchored source, never hand-edited. One task per
       destination touched:
         - domain-model.md: Glossary -> the shared docs/architecture/glossary.md (or the overview until it grows); ERD / lifecycle / domain events -> docs/architecture/areas/<area>/domain-model.md.
         - system-design.md: C4 L1 system context -> docs/architecture/system-context.md (or the overview); C4 L2 containers + runtime flows -> docs/architecture/areas/<area>/system-design.md; cross-cutting -> docs/architecture/cross-cutting.md (or the overview); Decisions and trade-offs -> the ADR step, not a view doc.
@@ -401,7 +421,9 @@ apply:
     cross-cutting}.md, while its area-specific sections go to
     docs/architecture/areas/<area>/{domain-model,system-design}.md (create
     docs/architecture/ and the area folder if missing). Keep exactly one copy of
-    system-wide content - never duplicate it per area. Promote each ADR draft by
+    system-wide content - never duplicate it per area. As you promote, strip verification anchors
+    (the `<!-- v:... -->` comments) from the content - the clean canon view is generated from the
+    anchored source and is never hand-edited. Promote each ADR draft by
     moving it from the change's adr/ folder to docs/adr/NNNN-*.md with the next free
     sequence number; once in docs/adr/ it is immutable, so never edit an accepted ADR
     while promoting. If the adr step produced only adr/none.md, there is nothing to

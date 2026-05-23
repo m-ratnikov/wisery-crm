@@ -17,8 +17,8 @@ TypeScript 5 strict, Node 22 LTS, Next.js 16 (App Router + Turbopack), React 19 
 - Drizzle migrations are immutable once applied.
 - Server Components by default. `'use client'` requires a reason.
 - Prompts in `src/prompts/<name>_v<n>.ts` (versioned filenames for prompt_version traceability).
-- Anthropic Structured Outputs over `tool_use` for any LLM call returning data.
-- Set `cache_control: { type: "ephemeral", ttl: "1h" }` explicitly for prompts over 1024 tokens (default TTL dropped to 5 min in March 2026).
+- LLM calls go through the `LLMProvider` port (LLM-agnostic, D9): use the provider's native structured-output mode, never `tool_use`, for any call returning data. For the default Anthropic adapter that is Anthropic Structured Outputs. (ADR-0003)
+- In the Anthropic adapter, set `cache_control: { type: "ephemeral", ttl: "1h" }` explicitly for prompts over 1024 tokens (default TTL dropped to 5 min in March 2026); provider-specific optimizations like this live in the adapter, not in the port contract (ADR-0003).
 - Use `server-only` import in any module that must never reach the client bundle.
 
 ## Architectural thesis

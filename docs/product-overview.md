@@ -50,6 +50,8 @@ first CRM user (Michael) is just tenant #1's config.
 | D6 | The ICP rubric becomes config-as-data, not a hardcoded prompt. | Required for reuse by other CRM users and for the config UI. |
 | D7 | Log outcomes against scores from day one; outcome-driven tuning of the bar is a later additive milestone. | Lets the feedback loop become additive, not a migration. The learning loop is the "neo" differentiator. |
 | D8 | Entry point is configurable: multiple source types (LinkedIn search, CSV of companies, Google alerts, X posts, ...). | Already proven across 11 platforms in `job-monitor`. A new source is a new adapter, not a new pipeline. |
+| D9 | LLM access is provider-agnostic behind an `LLMProvider` port: a provider-neutral structured-output contract (JSON Schema + Zod), with Anthropic as the default adapter, not a binding. | Avoid single-vendor lock-in on the highest-value path (qualify + draft); the contract is provider-neutral anyway. (ADR-0003) |
+| D10 | PII field minimization and sub-processor controls attach at the qualify boundary; earlier pipeline stages do not constrain data shape. Provisional, deferred until productization. | Single designated seam for data-processor controls when productized; avoids scattering minimization across adapters. (D1; system-design cross-cutting) |
 
 ## 4. Pipeline architecture
 
