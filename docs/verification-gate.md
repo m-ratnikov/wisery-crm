@@ -57,6 +57,17 @@ from the promoted `.md` for canon hygiene.
 confident-wrong and would have passed a self-check - only external source-checking caught it. That
 is why `[fact]` claims get external grounding, not self-consistency.
 
+## Mechanical checks (automated, run by `npm test`)
+
+The panel reviews C4 notation but does not RENDER Mermaid, so a diagram that reads fine to a human can
+still fail the renderer - e.g. a `;` inside sequence-message text terminates the statement and breaks
+the whole block. `tests/mermaid.test.ts` validates every ` ```mermaid ` block in `docs/**` and the
+active change against **Mermaid's own parser** (`mermaid.parse`); `tests/arch-links.test.ts` checks doc
+links resolve. Both run on `npm test`, and a failing block blocks promotion. We use the official
+`mermaid` engine, not a third-party validator: the dedicated ones either crash (`mermaid-validate`) or
+reimplement the grammar and false-positive on valid Mermaid (`@probelabs/maid` rejects parens in
+participant aliases and quoted cylinder labels that Mermaid accepts).
+
 ## Enforcement (no vendor or apply changes)
 
 The gate is a **section-0 gate task** in the change's `tasks` artifact. The `spec-driven-architecture`
@@ -69,8 +80,8 @@ Run the gate with `/verify-gate <artifact>`. It writes a record to
 verification time. The promotion tasks require a record that is passing and whose hash matches the
 artifact's current content - edit the artifact after verifying and the record is stale, so re-run.
 
-**Pass** = no unsupported claims (Stage 1) + Chair verdict not `rework` (Stage 3) + human sign-off
-where the artifact is high-stakes.
+**Pass** = mechanical checks green (`npm test`) + no unsupported claims (Stage 1) + Chair verdict not
+`rework` (Stage 3) + human sign-off where the artifact is high-stakes.
 
 ## Panel lineups by artifact (Stage 2)
 

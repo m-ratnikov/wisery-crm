@@ -17,6 +17,8 @@ BY SCOPE into the homes below (not copied file-to-file), and ADR drafts move to 
 - `glossary.md` - the ubiquitous language. ONE per bounded context (we have one - the CRM
   core), so one glossary today.
 - `system-context.md` - C4 level 1 (the system + external actors). System-wide, one file.
+- `system-design.md` - C4 level 2 (containers + runtime flows). System-wide while there is one
+  implicit area (rule 5); moves into `areas/<area>/` when the model splits.
 - `cross-cutting.md` - observability, secrets, trust boundaries, data sensitivity, scaling.
   System-wide, one file.
 - `deployment.md` - deployment topology. System-wide, present only when where-things-run is

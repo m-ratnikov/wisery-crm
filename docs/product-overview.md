@@ -45,8 +45,8 @@ first CRM user (Michael) is just tenant #1's config.
 | D1 | Product for CRM users, built single-user. Defer auth, billing, tenant isolation. | The expensive multi-tenant plumbing is additive. Only discipline kept now: config-as-data. |
 | D2 | Automate intelligence; the LinkedIn action stays human-assisted. | The old stack's failure and ban risk were entirely in the action layer. ToS-safe, GTM-aligned. |
 | D3 | Signals are the top of funnel, not CSV. | Crunchbase ($100/mo) is gone. Signal listening also fuels the comment-first motion. |
-| D4 | All scraping/enrichment behind one `SignalSource` / `EnrichmentProvider` interface. Self-host Puppeteer/Playwright for cheap/public sources, Apify for authenticated/deep. | A port of `job-monitor`'s `ScraperBase`. Per-source cost knob; Apify keeps detection risk off the user's own account. |
-| D5 | Qualifier = port of `job-monitor`'s static 1-5 ICP scorer (alert at >= 3, platform-aware, structured output, anti-hallucination, qualify + first-touch draft in one call). | Proven, cheap, already written. It is milestone M2 in working form. |
+| D4 | All scraping/enrichment behind one `SignalSource` / `EnrichmentProvider` interface. Self-host Puppeteer/Playwright for cheap/public sources, Apify for authenticated/deep. | A port of `job-monitor`'s `ScraperBase`. Per-source cost knob; Apify keeps detection risk off the user's own account. (ADR-0002) |
+| D5 | Qualifier = port of `job-monitor`'s static 1-5 ICP scorer (alert at >= 3, platform-aware, structured output, anti-hallucination). Qualify scores on the signal as the cost gate; the first-touch draft is a **separate** LLM call after deep enrichment, grounded in the dossier (per the pipeline order). | Proven, cheap scorer, already written (M2). Splitting the draft out of job-monitor's bundled call is the one evolution - so the draft is written from the enriched dossier, not the thin signal (hyper-personalization). Ordering resolved at the C4 L2 review, 2026-05-24. |
 | D6 | The ICP rubric becomes config-as-data, not a hardcoded prompt. | Required for reuse by other CRM users and for the config UI. |
 | D7 | Log outcomes against scores from day one; outcome-driven tuning of the bar is a later additive milestone. | Lets the feedback loop become additive, not a migration. The learning loop is the "neo" differentiator. |
 | D8 | Entry point is configurable: multiple source types (LinkedIn search, CSV of companies, Google alerts, X posts, ...). | Already proven across 11 platforms in `job-monitor`. A new source is a new adapter, not a new pipeline. |
@@ -73,6 +73,8 @@ queue.** Everything else is jobs + generative output.
 
 The system-level boundary view - the system as one box, its actors, and the external
 systems it depends on - is in [docs/architecture/system-context.md](architecture/system-context.md).
+The container-level view (C4 L2) - the runnable units inside the box and the runtime flows - is in
+[docs/architecture/system-design.md](architecture/system-design.md).
 
 ### Source types resolve to different entities
 
@@ -122,11 +124,12 @@ Port almost verbatim from `cto-practice/tools/job-monitor/icp-score.mjs`:
 - Platform-aware rubric (same person scores differently as a post vs a people-search
   result vs an Upwork job).
 - Anti-hallucination guard (score -1 / INSUFFICIENT_DATA on thin data).
-- Qualify + first-touch draft in the same call for people at >= 3.
+- In job-monitor, qualify and the first-touch draft were one call; this change splits them (see Upgrade).
 
-Upgrade two things:
+Upgrade three things:
 - Move the rubric out of a hardcoded prompt into ICP config-as-data (D6).
 - Persist outcomes (connected? replied? booked?) against each score (D7).
+- Split qualify and the first-touch draft: qualify scores on the signal as the cost gate; the draft becomes a separate call after deep enrichment, grounded in the dossier, not bundled into the score call (D5, pipeline order).
 
 ## 6. Reuse map (existing assets -> product)
 
@@ -192,6 +195,10 @@ Deferred:
   pipeline owns dedup and Signal persistence; one scan job per Source for failure isolation).
   The system-level boundary is drawn in
   [docs/architecture/system-context.md](architecture/system-context.md).
+- **The L2 container decomposition (web app, in-process worker, datastore, the on-demand
+  headless-browser process). RESOLVED** by the `c4-level2-architecture` change: see
+  [docs/architecture/system-design.md](architecture/system-design.md), with ADR-0002
+  (headless-browser scraping), ADR-0003 (LLMProvider port), and ADR-0004 (pg-boss facade).
 - Adapter shipping order beyond the first two person-yielding sources.
 - When the feedback-loop / eval milestone lands (data accrues from day one regardless).
 - Exact "assisted action" UI affordances.
