@@ -1,3 +1,9 @@
+## Purpose
+
+Durable background work on Postgres via an in-process pg-boss worker, reached through a thin facade: enqueue and process, retries with a dead-letter path, cron scheduling, and graceful drain on shutdown.
+
+## Requirements
+
 ### Requirement: Durable job enqueue and processing
 The system SHALL run background work as durable pg-boss jobs on Postgres, in-process (no Redis and no separate worker process by default), reached through the jobs facade rather than the raw pg-boss instance.
 

@@ -1,3 +1,9 @@
+## Purpose
+
+The runtime foundation every capability sits on: configuration validated at startup, a pooled Postgres connection, structured logging, and graceful shutdown.
+
+## Requirements
+
 ### Requirement: Configuration is validated at startup
 The system SHALL validate all required environment configuration at process startup and SHALL refuse to start if any required value is missing or malformed.
 

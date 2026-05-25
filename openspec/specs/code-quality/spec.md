@@ -1,4 +1,4 @@
-# code-quality
+## Purpose
 
 The repository's enforceable quality contract: a single `verify` gate every change must pass, plus the documented review and conformance cadence around it.
 
