@@ -83,6 +83,7 @@ architecture docs in context** (not the diff alone, which is inherently local). 
 ## Enforcement cadence
 
 - **Per change:** `verify` green + a `code-review` pass with architecture context + `/opsx:verify` (conformance to the change's design and the accepted ADRs) before archive.
+- **At archive:** archive with the CLI - `openspec archive <name> --yes` - which merges the change's delta specs into `openspec/specs/` and **validates them by default**. This is where canonical-spec structure is enforced; `verify`/CI stay purely code (do not run `openspec validate` in CI - spec validation belongs at the spec lifecycle boundary, not the code build). The `/opsx:archive` skill is patched to use this CLI (Fission-AI/OpenSpec #863, #913).
 - **Per milestone (M1, M2, ...):** a whole-system review over the accumulated code (point the architecture panel at it) to catch drift no single change reveals. The per-change reviews are structurally local; this is the global pass.
 
 ## Generation-time guidance (shift-left)

@@ -63,24 +63,20 @@ Archive a completed change in the experimental workflow.
    - If changes needed: "Sync now (recommended)", "Archive without syncing"
    - If already synced: "Archive now", "Sync anyway", "Cancel"
 
-   If user chooses sync, use Task tool (subagent_type: "general-purpose", prompt: "Use Skill tool to invoke openspec-sync-specs for change '<name>'. Delta spec analysis: <include the analyzed delta spec summary>"). Proceed to archive regardless of choice.
+   This assessment is informational only. The actual sync is performed by the `openspec archive` CLI in step 5 (it merges delta specs into the main specs AND validates by default). Do NOT hand-merge specs or invoke a separate `openspec-sync-specs` skill - that path skips validation and has shipped malformed canonical specs (Fission-AI/OpenSpec issues #863, #913). If the user chooses "Archive without syncing", pass `--skip-specs` in step 5.
 
-5. **Perform the archive**
+5. **Perform the archive (use the CLI)**
 
-   Create the archive directory if it doesn't exist:
-   ```bash
-   mkdir -p openspec/changes/archive
-   ```
-
-   Generate target name using current date: `YYYY-MM-DD-<change-name>`
-
-   **Check if target already exists:**
-   - If yes: Fail with error, suggest renaming existing archive or using different date
-   - If no: Move the change directory to archive
+   Archive with the OpenSpec CLI, which moves the change into `openspec/changes/archive/`, merges its delta specs into `openspec/specs/`, and validates by default:
 
    ```bash
-   mv openspec/changes/<name> openspec/changes/archive/YYYY-MM-DD-<name>
+   openspec archive "<name>" --yes
    ```
+
+   - Do NOT hand-roll the move (`mv`) or the spec merge. The manual path bypasses the CLI's validation and has produced invalid canonical specs (missing `## Purpose` / `## Requirements`) - Fission-AI/OpenSpec issues #863 and #913.
+   - For an infrastructure / tooling / doc-only change with no spec to promote, add `--skip-specs`.
+   - If the CLI reports validation errors, fix the delta or canonical spec and re-run. Do NOT pass `--no-validate`.
+   - Report whatever archive path and spec changes the CLI prints in step 6.
 
 6. **Display summary**
 
@@ -110,5 +106,5 @@ All artifacts complete. All tasks complete.
 - Don't block archive on warnings - just inform and confirm
 - Preserve .openspec.yaml when moving to archive (it moves with the directory)
 - Show clear summary of what happened
-- If sync is requested, use openspec-sync-specs approach (agent-driven)
+- Archive and spec sync are done by `openspec archive <name> --yes` (it merges specs and validates by default); never hand-move the folder or hand-merge/hand-write canonical specs (Fission-AI/OpenSpec #863, #913)
 - If delta specs exist, always run the sync assessment and show the combined summary before prompting
