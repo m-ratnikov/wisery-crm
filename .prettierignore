@@ -1,0 +1,11 @@
+.next/
+out/
+build/
+coverage/
+drizzle/
+node_modules/
+package-lock.json
+
+# Markdown is hand-maintained (architecture docs, mermaid blocks, openspec
+# artifacts) - not reflowed by Prettier.
+*.md

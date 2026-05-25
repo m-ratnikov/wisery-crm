@@ -24,6 +24,11 @@ export const logger = pino({
     censor: "[redacted]",
   },
   ...(isDev
-    ? { transport: { target: "pino-pretty", options: { colorize: true, translateTime: "SYS:standard" } } }
+    ? {
+        transport: {
+          target: "pino-pretty",
+          options: { colorize: true, translateTime: "SYS:standard" },
+        },
+      }
     : {}),
 });

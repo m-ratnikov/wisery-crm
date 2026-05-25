@@ -7,9 +7,7 @@ const EnvSchema = z.object({
   PGBOSS_DATABASE_URL: z.string().min(1).optional(),
   APP_DB_POOL_MAX: z.coerce.number().int().positive().default(10),
   PGBOSS_DB_POOL_MAX: z.coerce.number().int().positive().default(5),
-  LOG_LEVEL: z
-    .enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"])
-    .default("info"),
+  LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
 });
 

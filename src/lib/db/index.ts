@@ -24,7 +24,7 @@ export function getDb() {
 
 // Walking-skeleton connectivity probe (used by the health route + tests).
 export async function checkDbConnection(): Promise<boolean> {
-  const { rows } = await getPool().query("select 1 as ok");
+  const { rows } = await getPool().query<{ ok: number }>("select 1 as ok");
   return rows[0]?.ok === 1;
 }
 

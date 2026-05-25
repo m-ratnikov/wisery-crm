@@ -21,8 +21,9 @@ describe.skipIf(!url)("background-jobs: enqueue -> process -> complete", () => {
       const processed = new Promise<unknown>((r) => {
         resolve = r;
       });
-      await boss.work(queue, async (jobs) => {
-        resolve(jobs[0]!.data);
+      await boss.work(queue, (jobs) => {
+        resolve(jobs[0].data);
+        return Promise.resolve();
       });
 
       await boss.send(queue, { hello: "world" });

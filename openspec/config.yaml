@@ -38,6 +38,7 @@ rules:
     - Honor accepted ADRs in docs/adr/ (they are immutable); to diverge, say so explicitly in Decisions and record a superseding ADR via a spec-driven-architecture change (this schema has no adr step).
     - Server Components by default; 'use client' needs a stated reason. Use server-only for modules that must never reach the client bundle.
     - Anthropic Structured Outputs over tool_use for any LLM call returning data; prompts live in src/prompts/<name>_v<n>.ts.
+    - Reuse before build. State which existing modules/seams the change reuses (config via src/lib/config, data via src/lib/db, background work via the src/lib/jobs facade, LLM via the LLMProvider port) rather than introducing a parallel mechanism. For a new adapter, name the port/seam it plugs into; do not invent one.
   tasks:
     - Drizzle migrations are immutable once applied; a change means a new migration.
     - For prompts over 1024 tokens, set cache_control ephemeral with ttl 1h explicitly.

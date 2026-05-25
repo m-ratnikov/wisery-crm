@@ -23,7 +23,7 @@ Next 16 specifics (verified against `node_modules/next/dist/docs/.../05-config/0
 ESLint (`eslint.config.mjs`) composing `eslint-config-next/core-web-vitals`, `eslint-config-next/typescript`, `eslint-config-prettier/flat`, then typescript-eslint type-checked rules and our maintainability caps.
 - *Why:* we specifically want type-aware rules (`no-floating-promises`, `no-misused-promises`, `await-thenable`) - exactly the bugs that bite an async pg-boss/Postgres codebase - plus the Next plugin's RSC/Next rules. Biome is faster and one tool but has no type-aware linting and no Next rules.
 - *Type-aware:* enable typescript-eslint `recommendedTypeChecked` with `parserOptions.projectService: true` so rules see the type system. Config and test files must be in the TS project graph or they error.
-- *Maintainability caps* (error-level): `complexity`, `max-depth`, `max-params`, `no-duplicate-imports`, plus `@typescript-eslint/no-explicit-any`. Tuned to pass the current backbone, then ratcheted.
+- *Maintainability caps* (error-level): `max-depth`, `max-params`, `no-duplicate-imports`, plus `@typescript-eslint/no-explicit-any`. Complexity is gated by sonarjs `cognitive-complexity` (D-I), so ESLint core's cyclomatic `complexity` is not used. Tuned to pass the current backbone, then ratcheted.
 
 ### D-B: Prettier as the single formatting source of truth
 Prettier formats; `eslint-config-prettier/flat` switches off every ESLint rule that would fight it (per the Next docs). CI runs `prettier --check`; local `format` runs `--write`.
@@ -34,12 +34,12 @@ A separate `.dependency-cruiser.cjs` with `depcruise` in `verify`, not an ESLint
 - *Why:* dep-cruiser is graph-based and can assert *reachability*, not just direct imports - so "a `server-only` module must not be reachable from a `'use client'` module" is expressible, as are `no-circular` and `no-orphans`. ESLint import rules only see one file's direct imports.
 - *Initial rules:* (1) `src/lib/**` must not depend on `src/app/**`; (2) `no-circular`; (3) nothing reachable from a `'use client'` module may transitively import `server-only`; (4) `src/lib/runtime/**` (Node-only bootstrap) is allowed only from `src/instrumentation.ts`. The ruleset is built to extend: when the D4/D9 ports land, add "adapters may import ports, never the reverse."
 
-### D-I: Duplication and code-smell detection, tuned to the rule of three
-Two tools, because textual duplication and design smells are different signals:
-- `eslint-plugin-sonarjs` (flat config) for code smells as build errors: `no-identical-functions`, `no-duplicate-string`, `no-identical-expressions`, and `cognitive-complexity` (a better complexity signal than cyclomatic `complexity`, which we keep too).
-- `jscpd` as a project-wide copy-paste gate (`dup` script, in `verify`): tokenizes `src/**`, fails over a configured duplication ratio.
+### D-I: Duplication and complexity detection, tuned to the rule of three
+Two tools, each pulling distinct weight (the toolset was trimmed to avoid overlap):
+- `eslint-plugin-sonarjs` **v4**, configured for `cognitive-complexity` only. Cognitive complexity is nesting-aware (deeper nesting costs more), which ESLint core cannot express - core has only cyclomatic `complexity`, a flat branch count. We use cognitive as the single complexity gate and drop core `complexity` as redundant. sonarjs's own duplication rules (`no-identical-functions`, `no-duplicate-string`) are dropped because jscpd covers cross-file duplication; v4 also clears the HIGH-severity `minimatch` advisories that v3 carried.
+- `jscpd` as the project-wide copy-paste gate (`dup` script, in `verify`): tokenizes `src/**`, fails over a configured duplication ratio. This is the unique cross-file DRY detector - per-file lint rules cannot see it.
 
-The honest scope: this enforces only the *textual* half of DRY (copy-paste, identical bodies, repeated literals). The *knowledge* half - the same rule expressed two different ways - is not mechanically detectable and stays a review-checklist item (D-H).
+The honest scope: this enforces the *textual* half of DRY (cross-file copy-paste) plus a complexity ceiling. The *knowledge* half - the same rule expressed two different ways - is not mechanically detectable and stays a review-checklist item (D-H).
 
 **Tuning to the rule of three (the load-bearing decision here).** The duplication gate's job is to make copy-paste *visible*, not to mandate extraction. A threshold set too tight pushes toward premature abstraction - coupling unrelated code because it briefly looked alike - which is a worse defect than the duplication. So:
 - jscpd `minTokens`/`minLines` are set to catch genuine duplicated blocks (a real copy-paste), and the failing ratio is set with headroom so two incidental similar fragments do not trip it.
@@ -59,9 +59,8 @@ v8 provider, thresholds in `vitest.config.ts`, generated/config/stub files exclu
 `verify` = `tsc --noEmit` -> `eslint .` (includes sonarjs) -> `prettier --check` -> `depcruise src` -> `jscpd src` -> `vitest run --coverage` -> `next build`. Cheapest, most-likely-to-fail checks first; `next build` last (slowest).
 - A fast local subset (`verify:fast` = tsc + eslint + vitest) is offered so the inner loop stays quick; full `verify` and CI run everything.
 
-### D-G: Pre-commit is a fast subset, not full verify
-husky + lint-staged run `eslint --fix` + `prettier --write` on staged files only.
-- *Why:* commit-time must stay fast or it gets bypassed with `--no-verify`. The real gate is `verify` in CI; pre-commit is just early formatting/lint feedback. Husky is optional and can be dropped if it proves annoying.
+### D-G: No pre-commit hook (decided against)
+husky + lint-staged were considered and **dropped**. A pre-commit hook is bypassable convenience (`--no-verify`), and the real, unbypassable gate is `verify` in CI; early local feedback comes from editor format-on-save and `verify:fast`. Not worth the extra dependencies and the prepare-script / git-hook / cross-platform surface for a single-developer project. Revisit if the team grows and contributors routinely push un-formatted diffs.
 
 ### D-H: The review pass is process, run via the code-review skill with system context, against a written checklist
 Documented in CLAUDE.md and `docs/engineering.md`, not wired into CI (it is judgment, not a binary check). It is run **with the architecture docs in context, not just the raw diff** - a diff-only review is inherently local and cannot see whether locally-fine code is wrong in the system. The checklist names what the gates cannot judge, so review is rigorous rather than vague:

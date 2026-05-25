@@ -1,6 +1,5 @@
 import "server-only";
-import { PgBoss } from "pg-boss";
-import type { Job, SendOptions } from "pg-boss";
+import { PgBoss, type Job, type SendOptions } from "pg-boss";
 import { getConfig } from "@/lib/config/env";
 import { logger } from "@/lib/log";
 
@@ -44,8 +43,9 @@ export async function startJobs(): Promise<void> {
   const b = getBoss();
   await b.start(); // creates the pgboss schema, starts the poller, cron, maintenance
   await b.createQueue(HEARTBEAT_QUEUE);
-  await b.work(HEARTBEAT_QUEUE, async (jobs) => {
+  await b.work(HEARTBEAT_QUEUE, (jobs) => {
     logger.info({ queue: HEARTBEAT_QUEUE, count: jobs.length }, "heartbeat tick");
+    return Promise.resolve(); // no async work yet; WorkHandler requires a Promise
   });
   await b.schedule(HEARTBEAT_QUEUE, "* * * * *"); // every minute - proves the in-process worker runs
   logger.info("background jobs started (pg-boss, in-process)");

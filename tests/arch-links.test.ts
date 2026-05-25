@@ -60,9 +60,8 @@ describe("spec -> architecture references", () => {
     const broken = localLinkTargets(section).filter(
       (target) => !existsSync(resolve(dirname(specFile), target)),
     );
-    expect(
-      broken,
-      `${specFile} has broken architecture links:\n  ${broken.join("\n  ")}`,
-    ).toEqual([]);
+    expect(broken, `${specFile} has broken architecture links:\n  ${broken.join("\n  ")}`).toEqual(
+      [],
+    );
   });
 });

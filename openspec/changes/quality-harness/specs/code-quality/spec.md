@@ -27,16 +27,16 @@ The verify gate SHALL fail on TypeScript type errors and on ESLint violations, i
 - **WHEN** a module contains an unhandled (floating) promise or another error-level lint violation
 - **THEN** verify fails at the lint step
 
-### Requirement: Duplication and code-smell gate
-The verify gate SHALL fail on textual code duplication above a configured threshold and on code-smell rules (identical function bodies, repeated string literals, excessive cognitive complexity). The duplication threshold SHALL be tuned to surface genuine copy-paste, not to force extraction of incidental similarity; the decision of when to extract a shared abstraction is governed by the rule of three (a review concern), not by the gate.
+### Requirement: Duplication and complexity gate
+The verify gate SHALL fail on cross-file textual duplication above a configured threshold and on functions exceeding a cognitive-complexity ceiling. The duplication threshold SHALL be tuned to surface genuine copy-paste, not to force extraction of incidental similarity; the decision of when to extract a shared abstraction is governed by the rule of three (a review concern), not by the gate.
 
 #### Scenario: Copy-pasted block
 - **WHEN** a duplicated code block exceeds the configured duplication threshold
 - **THEN** verify fails the duplication gate
 
-#### Scenario: Identical function bodies
-- **WHEN** two functions have identical bodies
-- **THEN** verify fails the code-smell check
+#### Scenario: Excessively complex function
+- **WHEN** a function's cognitive complexity (nesting-aware) exceeds the configured ceiling
+- **THEN** verify fails the complexity check
 
 #### Scenario: Incidental similarity is tolerated
 - **WHEN** two small fragments are similar but below the configured threshold
