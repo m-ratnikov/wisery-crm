@@ -8,8 +8,12 @@ The repository's enforceable quality contract: a single `verify` gate every chan
 The repository SHALL provide one command, `npm run verify`, that runs every automated quality gate and exits non-zero if any gate fails. This command is the definition of done for any change.
 
 #### Scenario: All gates pass
-- **WHEN** `npm run verify` runs against a change where types, lint, formatting, coverage, boundaries, and build all pass
+- **WHEN** `npm run verify` runs against a change where types, spec/artifact structure, lint, formatting, coverage, boundaries, and build all pass
 - **THEN** it exits zero
+
+#### Scenario: Malformed spec or change artifact
+- **WHEN** a canonical spec or change artifact is missing a required section or scenario
+- **THEN** verify fails at the openspec validation step
 
 #### Scenario: A gate fails
 - **WHEN** any single gate fails during `npm run verify`
