@@ -163,6 +163,9 @@ the data layer." The earlier SQLite-file-per-tenant path no longer applies.
 
 ## 8. MVP scope
 
+The sequenced build plan for this scope - capabilities, dependencies, and milestones - is in
+[docs/roadmap.md](roadmap.md).
+
 In:
 - ICP config + user profile (config-as-data)
 - Configurable signal sources (contract uniform from day one; adapters land
