@@ -12,8 +12,9 @@ BY SCOPE into the homes below (not copied file-to-file), and ADR drafts move to 
 ## Layout
 
 - `../product-overview.md` - the spine: north-star, locked-decisions table (-> ADRs),
-  pipeline, MVP scope, open questions, durable personas/journey. System-wide views may live
-  here as sections until they grow into their own file.
+  pipeline, MVP scope, open questions, and the durable `Personas` and `Primary journey`
+  sections (required - see "Canon integrity" below). System-wide views may live here as
+  sections until they grow into their own file.
 - `glossary.md` - the ubiquitous language. ONE per bounded context (we have one - the CRM
   core), so one glossary today.
 - `system-context.md` - C4 level 1 (the system + external actors). System-wide, one file.
@@ -65,3 +66,26 @@ and architecture in agreement stays a human review judgment.
 ADRs live in `../adr/`, numbered and immutable once accepted; the view docs here are living
 and revised by later changes. The reasoning behind this layout is in
 `../explore/2026-05-21-architecture-folder-organization.md`.
+
+## Canon integrity
+
+Promotion into this canon is LLM-authored - a re-slice by scope, not a mechanical merge.
+(OpenSpec spec deltas, by contrast, the CLI merges and `validate --strict`s on archive; an
+architecture re-slice cannot be merged deterministically, so it is verified instead.) To keep
+the re-slice honest, the canon has a machine-readable contract and a deterministic check - the
+architecture analog of `validate --strict`:
+
+- `canon.manifest.json` - the contract: each canon doc and the section headings it MUST
+  contain, the named artifacts (e.g. the primary journey) that canon prose may reference only
+  if they resolve to a heading within canon, and the docs allowed to mention the archive.
+- `tests/canon-integrity.test.ts` (runs in `npm run verify`, beside `arch-links.test.ts`)
+  enforces it: required sections present; no dangling references to artifacts that live only
+  in the archive; canon never sends the reader to the archive to understand itself; all canon
+  links and intra-canon anchors resolve; and no `<!-- v:... -->` verification anchors survived
+  promotion.
+
+The principle is verify, don't mechanize: the model writes the promotion, the check judges the
+result. A red here means a change's `apply` dropped or mis-sliced canon content - fix the
+canon, not the test. This is why the `Personas` and `Primary journey` sections above are
+"required": the primary-journey defect (a canon view referencing a journey that lived only in
+the archived L1 use-cases) was exactly the dangling reference this check now blocks.

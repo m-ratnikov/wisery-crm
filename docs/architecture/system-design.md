@@ -99,7 +99,7 @@ Container by container, and why each qualifies as a container (not a component):
 
 ## Key runtime flows
 
-Two highest-judgment flows, both consistent with the L1 boundary flow and the primary journey. These
+Two highest-judgment flows, both consistent with the [L1 boundary flow](system-context.md#boundary-runtime-flow) and the [primary journey](../product-overview.md#primary-journey). These
 are dynamic views over the containers above; because the web and worker are one container, the app
 appears once and a note marks when it is acting in its in-process worker capacity (ADR-0001).
 

@@ -1,0 +1,36 @@
+{
+  "$description": "Machine-readable contract for the living architecture canon. Enforced by tests/canon-integrity.test.ts; narrated by docs/architecture/README.md ('Canon integrity'). Promotion (spec-driven-architecture apply) is an LLM-authored re-slice by scope; this manifest plus the test are the deterministic post-condition - the architecture analog of `openspec validate --strict`. Principle: verify, don't mechanize.",
+  "$paths": "docs[].path is resolved relative to this file (docs/architecture/). requiredSections and namedArtifacts match headings case-insensitively, ignoring a leading 'N.' number prefix.",
+  "docs": [
+    {
+      "path": "../product-overview.md",
+      "requiredSections": [
+        "Personas",
+        "Primary journey",
+        "Locked decisions",
+        "Pipeline architecture",
+        "MVP scope",
+        "Open questions"
+      ]
+    },
+    {
+      "path": "system-context.md",
+      "requiredSections": ["Boundary runtime flow"]
+    },
+    {
+      "path": "system-design.md",
+      "requiredSections": ["Containers", "Key runtime flows"]
+    },
+    {
+      "path": "cross-cutting.md",
+      "requiredSections": []
+    },
+    {
+      "path": "README.md",
+      "requiredSections": ["Layout", "Rules", "Canon integrity"],
+      "allowArchiveReference": true
+    }
+  ],
+  "namedArtifacts": ["primary journey", "boundary runtime flow"],
+  "forbidArchiveDependency": ["changes/archive", "from the archived"]
+}

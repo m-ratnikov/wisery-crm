@@ -38,6 +38,49 @@ first CRM user (Michael) is just tenant #1's config.
 - **Quality over volume is a feature, not a limitation.** The product encodes
   "10 genuine relationships > 250 automated messages" rather than fighting it.
 
+## Personas
+
+The durable human actors the product serves. The external systems it depends on - signal
+sources, the optional scraping/enrichment provider, the LLM provider - are drawn as actors
+in [docs/architecture/system-context.md](architecture/system-context.md); the two human
+personas are:
+
+- **CRM user (primary operating persona)** - a freelancer, solopreneur, developer,
+  consultant, or other operator running outreach for their own book of business (tenant #1).
+  Wants qualified prospects and an optional drafted first touch without wiring five tools
+  together, and acts manually to stay within each channel's terms of service. Everything
+  personal to one CRM user (ICP, profile, case studies, voice) is per-tenant
+  config-as-data (D1).
+- **Prospect (end recipient)** - the person who ultimately receives the human-sent touch,
+  through whatever channel it targets (LinkedIn first). Two facts shape the system boundary:
+  their personal data enters the system (third-party PII), and they are reached only by a
+  manual human action, never automated sending (D2).
+
+## Primary journey
+
+The daily loop. "Anchor view" = one of the few hand-built UI screens the product commits to
+(ICP/profile config, lead list, review/approve queue); everything else is background jobs or
+generative output (the thesis above). The runtime flows in
+[docs/architecture/system-design.md](architecture/system-design.md) and the boundary flow in
+[system-context.md](architecture/system-context.md) are dynamic views of this journey and
+must stay consistent with it.
+
+1. Configure ICP, profile, and signal sources - anchor view: config (occasional).
+2. Pull raw source records from the configured sources - background job: signal scan.
+3. Normalize and expand company/content records into people - background job (a provider or
+   self-host scraping).
+4. Qualify each prospect 1-5 against the ICP and gate at >= 3 - background job: qualifier
+   (LLM provider).
+5. Deep-enrich the >= 3 prospects into a full dossier - background job (a provider or
+   self-host scraping).
+6. Draft a first touch, if drafting is enabled - background job (LLM provider).
+7. Review the dossier and draft, then act through the chosen channel - anchor view:
+   review/approve queue (high judgment).
+8. Track the outcome against the original score - background job + tracking.
+
+Throughout, the CRM user works from the prospect/company list (an anchor view) to filter,
+tag, and open dossiers.
+
 ## 3. Locked decisions
 
 | # | Decision | Why |

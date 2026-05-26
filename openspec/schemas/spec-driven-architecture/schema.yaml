@@ -375,8 +375,13 @@ artifacts:
       `<area>` is the subdomain this slice belongs to (e.g. signals, qualification);
       create the area folder if new, and start flat (a single implicit area at the
       top of docs/architecture/) until the model grows enough to split. use-cases.md is
-      NOT promoted - durable behavior becomes OpenSpec specs, and the change folder is
-      the archived record for the rest.
+      not promoted WHOLESALE, but it is not left entirely behind either: its durable
+      Personas and Primary journey ARE re-sliced into docs/product-overview.md (the
+      "Personas" and "Primary journey" sections, which docs/architecture/canon.manifest.json
+      pins as required - see the "Reconcile the spine" group). The rest (use-case briefs,
+      acceptance signals) becomes OpenSpec specs or stays as the archived record. Because of
+      this, a canon view that references the primary journey or the personas MUST resolve
+      within canon, never point the reader at the archived use-cases.
 
       - **Promote ADRs**: a task to move each ADR drafted in this change's adr/
       folder into docs/adr/ with the next free 4-digit sequence number (reconfirm
@@ -386,6 +391,13 @@ artifacts:
 
       - **Cross-link**: tasks to wire links between the overview, the view docs,
       and the ADRs so the canon is navigable.
+
+      - **Verify canon integrity**: a final gate task - `npm run verify` (which runs
+      tests/canon-integrity.test.ts against docs/architecture/canon.manifest.json) passes:
+      required sections present, no dangling references to archive-only artifacts, all canon
+      links and intra-canon anchors resolve, and no leaked `<!-- v:... -->` anchors. This is
+      the deterministic post-condition that the re-slice dropped or mis-placed nothing - the
+      architecture analog of `openspec validate --strict` for specs.
 
 
       Each task must be a checkbox: `- [ ] X.Y Task description`, small enough to
@@ -433,3 +445,12 @@ apply:
     Pause if a draft conflicts with the current canon in a way that needs a human
     decision, or if promoting would contradict an in-force ADR. Do not silently
     overwrite - surface the conflict.
+
+    After promoting, the canon must satisfy its machine-readable contract: run
+    `npm run verify` (or `npx vitest run tests/canon-integrity.test.ts`), which checks
+    docs/architecture/canon.manifest.json - required sections present, no references to
+    artifacts that live only in the archive, all canon links and intra-canon anchors resolve,
+    and no `<!-- v:... -->` anchors left behind. This is the deterministic post-condition on
+    the re-slice (the analog of `openspec validate --strict` for specs): promotion is
+    LLM-authored, but a red check means a section was dropped or mis-sliced - fix the canon,
+    not the test.
