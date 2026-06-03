@@ -5,6 +5,14 @@ ADRs, system-design, deployment). Each agent is one adversarial lens with a memo
 nickname you use to summon it. Invoke a single agent by nickname, pick a prebuilt lineup,
 or run the full panel.
 
+> **Scope: this roster reviews artifacts, not code.** The code-medium counterpart is the
+> **system review** ([system-review.md](system-review.md)), which runs at convergence and
+> milestone over the wired tree. It reuses only the medium-agnostic pieces here - the output
+> contract below and the Chair - and dispatches its own three code lenses. Several agents here
+> are artifact-shaped (Pedant on C4 notation, Tracer on diagram cross-levels, Rookie on prose
+> clarity) and have no lens on code; do not summon them against a codebase. Atlas and a
+> code-oriented Canon do carry over, since their lenses are not tied to the diagram medium.
+
 The roster has two halves, designed to clash:
 
 - **Conformance reviewers** check that the artifact faithfully renders and honors decisions

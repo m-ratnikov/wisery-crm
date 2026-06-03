@@ -6,9 +6,11 @@ or ungrounded claims** (hallucination) and **unsound design**.
 
 **Scope.** Applies to `spec-driven-architecture` artifacts only (proposal, use-cases,
 domain-model, system-design, deployment, adr). It does NOT apply to the default `spec-driven`
-(code) schema - code is verified by typecheck, tests, lint, and spec-conformance, a different
-mechanism (parked, design later). Verification is matched to the artifact's medium: prose claims
-get grounding; code gets execution.
+(code) schema - code is verified by typecheck, tests, lint, and spec-conformance at the
+per-change tier, and by the **system review** ([system-review.md](system-review.md)) at the
+convergence / milestone tier (the code-medium mechanism this gate originally left to design
+later). Verification is matched to the artifact's medium: prose claims get grounding; code gets
+execution.
 
 This is grounded in published practice, not invented here (see Sources): the extrinsic/intrinsic
 hallucination split, reference-free detection (SelfCheckGPT, Chain-of-Verification), RAGAS-style
