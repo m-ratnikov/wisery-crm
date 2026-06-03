@@ -20,12 +20,13 @@ TypeScript 5 strict, Node 22 LTS, Next.js 16 (App Router + Turbopack), React 19 
 - LLM calls go through the `LLMProvider` port (LLM-agnostic, D9): use the provider's native structured-output mode, never `tool_use`, for any call returning data. For the default Anthropic adapter that is Anthropic Structured Outputs. (ADR-0003)
 - In the Anthropic adapter, set `cache_control: { type: "ephemeral", ttl: "1h" }` explicitly for prompts over 1024 tokens (default TTL dropped to 5 min in March 2026); provider-specific optimizations like this live in the adapter, not in the port contract (ADR-0003).
 - Use `server-only` import in any module that must never reach the client bundle.
+- UI wireframes (clickable anchor-view mockups) live in `src/app/prototype/`; when you add, rename, or graduate a screen, update its `README.md` registry (the screen-to-capability join table that the architecture docs and capability specs link to). Convention and provenance: `docs/explore/2026-05-26-anchor-view-wireframes.md`.
 
 ## Engineering (definition of done)
 
 - Reuse before build. Find and follow the existing pattern; do not add a parallel mechanism for config, data, jobs, or LLM. Read config via `src/lib/config`, data via `src/lib/db`, background work via the `src/lib/jobs` facade, LLM via the `LLMProvider` port. State in a change's design which existing modules/seams it reuses.
 - DRY is one authoritative representation per business rule, not textual sameness. Rule of three: tolerate the second occurrence, extract a shared abstraction only at the third (avoid premature abstraction).
-- Done = `npm run verify` green (typecheck, lint, format, dependency-cruiser boundaries, jscpd duplication, per-file coverage, build) plus a `code-review` pass on the diff before archive. Full posture: `docs/roadmap.md`; testing strategy + review checklist: `docs/engineering.md`.
+- Done = `npm run verify` green (typecheck, lint, format, dependency-cruiser boundaries, jscpd duplication, per-file coverage, build) plus a `code-review` pass on the diff before archive. The review **loops, not one-shot**: after applying review fixes, re-run `verify` AND re-review the fix delta with full context (surrounding code, callers, the invariants it touches - not the diff alone); archive only once a pass finds nothing material. Full posture: `docs/roadmap.md`; testing strategy + review checklist: `docs/engineering.md`.
 
 ## Architectural thesis
 

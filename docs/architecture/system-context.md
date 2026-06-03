@@ -69,9 +69,10 @@ sequenceDiagram
     U->>S: log outcome
 ```
 
-The "qualify (and draft, if enabled)" step is now resolved at L2: qualify scores on the signal as
-the cost gate, and the first-touch draft is a separate LLM call after deep enrichment, grounded in
-the dossier (D5). The container-level flows are in [system-design.md](system-design.md).
+The "qualify (and draft, if enabled)" step is now resolved at L2: qualify uses the cheap signal as
+the cost gate and records an ICP score per person (a Scoring against the prospect, not the signal),
+and the first-touch draft is a separate LLM call after deep enrichment, grounded in the dossier (D5,
+refined by ADR-0005). The container-level flows are in [system-design.md](system-design.md).
 
 ## Scope notes
 

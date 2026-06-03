@@ -1,14 +1,18 @@
-# System design (C4 L2) - containers and runtime flows
+# System design (C4 L2 + L3) - containers, runtime flows, and components
 
-The container view of Wisery CRM: the separately runnable and deployable units inside (and at the
-edge of) the boundary, the protocols between them, and the two highest-judgment runtime flows. The
-L1 system context is in [system-context.md](system-context.md); cross-cutting concerns in
-[cross-cutting.md](cross-cutting.md); the decisions behind this view are
+The container view of Wisery CRM (C4 L2) plus the component decomposition inside the app container
+(C4 L3): the separately runnable units, the protocols between them, the highest-judgment runtime
+flows, and the components that make up the one app process. The L1 system context is in
+[system-context.md](system-context.md); the data model in [domain-model.md](domain-model.md);
+cross-cutting concerns in [cross-cutting.md](cross-cutting.md); the decisions behind this view are
 [ADR-0001](../adr/0001-background-job-runtime.md), [ADR-0002](../adr/0002-headless-browser-scraping.md),
-[ADR-0003](../adr/0003-llm-provider-port.md), and [ADR-0004](../adr/0004-pg-boss-facade.md).
+[ADR-0003](../adr/0003-llm-provider-port.md), [ADR-0004](../adr/0004-pg-boss-facade.md),
+[ADR-0005](../adr/0005-signal-to-prospect-fan-out.md), and
+[ADR-0006](../adr/0006-pre-code-l3-component-view.md).
 
-Promoted from change `c4-level2-architecture` (2026-05-24); flat at the top of the architecture folder
-while there is a single implicit area (README rule 5).
+Promoted from change `c4-level2-architecture` (2026-05-24); the C4 L3 component section added by
+`c4-level3-and-domain-model` (2026-05-26). Flat at the top of the architecture folder while there is
+a single implicit area (README rule 5).
 
 ## Containers
 
@@ -131,7 +135,7 @@ sequenceDiagram
     Note over App: normalize raw records -> RawItems at the edge (our D4 connector),<br/>then dedup -> Signals (drop already-seen)
     App->>DB: persist Signals + enqueue qualify jobs
     Note over App,DB: one scan job per Source - a failure is isolated,<br/>retried, and dead-lettered by pg-boss (ADR-0001)
-    App->>LLM: qualify - ICP score on the signal (HTTPS, carries PII)
+    App->>LLM: qualify - score the signal-derived person, signal as cost gate (HTTPS, carries PII)
     LLM-->>App: score (1-5)
     Note over App,DB: qualify and the draft-after-enrich run as separate pg-boss jobs -<br/>each externally-billed step idempotent, own prompt_version, a draft retry never re-bills qualify (ADR-0001)
     alt score >= 3
@@ -166,4 +170,253 @@ sequenceDiagram
     U->>B: log outcome
     B->>App: outcome
     App->>DB: persist outcome against score (D7)
+```
+
+## Components (C4 L3)
+
+The component decomposition inside the single app container. Maintaining a level-3 view in living
+canon, ahead of the code, is a deliberate, scoped exception to the usual "stop at L2" stance -
+recorded in [ADR-0006](../adr/0006-pre-code-l3-component-view.md). It is a skeleton of the stable
+seams, revised as features land; feature-internal detail stays in each capability's design, and the
+build-enforced dependency-cruiser port/adapter rule (not this diagram) is the contract.
+
+Everything blue is a component of the one app container; grey is external. Components are grouped by
+their stable seam. A solid arrow is an in-process dependency (a call within the one Node process); a
+dashed arrow is an adapter implementing a port (the dependency-inversion direction); an edge crossing
+to an external system carries its wire protocol. All components read configuration via `config` and
+emit logs via `log`; those ubiquitous edges are stated once here rather than drawn. The three
+anchor-view nodes are RSC UI surfaces, not callable components; the named bands are grouping lenses by
+role or seam, not containers.
+
+> Interactive wireframes of these three anchor-view nodes (clickable, mock-data) live in
+> [`src/app/prototype/`](../../src/app/prototype/README.md) - supplementary implementation sketches
+> for settling UX, not canon. The component contract here governs; the registry there maps each
+> screen to the capabilities it surfaces.
+
+```mermaid
+flowchart TB
+    subgraph app["Wisery CRM app - one Node process (ADR-0001)"]
+        direction TB
+
+        subgraph web["Web / RSC surface - web role"]
+            icp["ICP and source config<br/>anchor view #1"]
+            plist["Prospect list<br/>anchor view #3"]
+            queue["Review and approve queue<br/>anchor view #2"]
+            handlers["Route handlers / Server actions<br/>RSC reads + outcome logging + enqueue scan"]
+        end
+
+        root["Composition root<br/>instrumentation.ts -> bootstrapNodeRuntime<br/>starts jobs, registers workers + adapters"]
+
+        subgraph workers["Background pipeline - worker role (pg-boss handlers)"]
+            hscan["scan handler"]
+            hexpand["normalize-expand handler<br/>M2"]
+            hqual["qualify handler"]
+            henrich["enrich handler"]
+            hdraft["draft handler"]
+        end
+
+        subgraph cores["Domain cores - role-agnostic, depend on db only"]
+            cscan["signals pipeline<br/>dedup + persist + scan counts"]
+            cqual["qualification core<br/>fan-out + score gate"]
+            cenrich["enrichment core<br/>builds dossier"]
+            cdraft["drafting core<br/>draft from dossier + profile"]
+            cexpand["expansion core<br/>company -> people, M2"]
+        end
+
+        subgraph portgrp["Ports and registry - D4 / D9 seams"]
+            psrc["SignalSource port + registry"]
+            penr["EnrichmentProvider port"]
+            pllm["LLMProvider port"]
+        end
+
+        subgraph adgrp["Adapters - reached only via registry / composition root"]
+            afix["fixture connector<br/>test/dev only"]
+            alink["linkedin-search"]
+            ax["x-posts"]
+            aapify["Apify enrichment"]
+            abrow["self-host browser driver<br/>Playwright"]
+            aanth["Anthropic adapter<br/>Structured Outputs"]
+        end
+
+        subgraph prompts["Prompts - src/prompts/&lt;name&gt;_v&lt;n&gt;"]
+            pq["qualify prompt"]
+            pd["draft prompt"]
+        end
+
+        subgraph platform["Platform facades - shared"]
+            cfg["config<br/>src/lib/config"]
+            db["db / Drizzle + repos<br/>src/lib/db"]
+            jobs["jobs facade<br/>src/lib/jobs"]
+            logc["log<br/>src/lib/log"]
+        end
+    end
+
+    PG[("Managed Postgres")]
+    SRC["Signal sources"]
+    APIFY["Scraping / enrichment provider"]
+    LLMX["LLM provider"]
+    BROWSER["Headless browser<br/>separate OS process"]
+
+    icp --> handlers
+    plist --> handlers
+    queue --> handlers
+    handlers --> db
+    handlers --> jobs
+
+    root --> jobs
+    root -->|"registers workers"| workers
+    root --> psrc
+
+    hscan --> cscan
+    hexpand --> cexpand
+    hqual --> cqual
+    henrich --> cenrich
+    hdraft --> cdraft
+
+    cscan --> db
+    cqual --> db
+    cenrich --> db
+    cdraft --> db
+    cexpand --> db
+    cexpand --> penr
+    cscan --> psrc
+    cqual --> pllm
+    cqual --> pq
+    cdraft --> pllm
+    cdraft --> pd
+    cenrich --> penr
+
+    afix -.->|implements| psrc
+    alink -.->|implements| psrc
+    ax -.->|implements| psrc
+    aapify -.->|implements| penr
+    abrow -.->|implements| penr
+    aanth -.->|implements| pllm
+
+    db -->|"SQL, Postgres wire"| PG
+    jobs -->|"SQL, Postgres wire"| PG
+    alink -->|HTTPS| SRC
+    ax -->|HTTPS| SRC
+    aapify -->|HTTPS| APIFY
+    abrow -->|"CDP over pipe"| BROWSER
+    BROWSER -->|HTTPS| SRC
+    aanth -->|HTTPS| LLMX
+
+    classDef internal fill:#cfe3ff,stroke:#4a78b5,color:#10243e;
+    classDef external fill:#ececec,stroke:#9a9a9a,color:#1f1f1f;
+    classDef port fill:#d6f5e0,stroke:#3f9d6a,color:#10243e;
+    classDef adapter fill:#fff0cc,stroke:#c79a3a,color:#3a2e10;
+    classDef anchorview fill:#eaf1ff,stroke:#4a78b5,color:#10243e,stroke-dasharray:4 4;
+    class handlers,root,hscan,hexpand,hqual,henrich,hdraft,cscan,cqual,cenrich,cdraft,cexpand,cfg,db,jobs,logc,pq,pd internal;
+    class icp,plist,queue anchorview;
+    class psrc,penr,pllm port;
+    class afix,alink,ax,aapify,abrow,aanth adapter;
+    class PG,SRC,APIFY,LLMX,BROWSER external;
+```
+
+**Legend.**
+
+```mermaid
+flowchart LR
+    Li["Internal component"]
+    Lav["Anchor view (RSC page)"]
+    Lp["Port / seam"]
+    La["Adapter"]
+    Lx["External system"]
+    A1[" "] -->|"in-process dependency"| A2[" "]
+    B1[" "] -.->|"implements (DIP)"| B2[" "]
+
+    classDef internal fill:#cfe3ff,stroke:#4a78b5,color:#10243e;
+    classDef anchorview fill:#eaf1ff,stroke:#4a78b5,color:#10243e,stroke-dasharray:4 4;
+    classDef port fill:#d6f5e0,stroke:#3f9d6a,color:#10243e;
+    classDef adapter fill:#fff0cc,stroke:#c79a3a,color:#3a2e10;
+    classDef external fill:#ececec,stroke:#9a9a9a,color:#1f1f1f;
+    class Li internal;
+    class Lav anchorview;
+    class Lp port;
+    class La adapter;
+    class Lx external;
+```
+
+### Component catalog
+
+| Component | Responsibility | Seam / port | Role | Owning capability |
+|---|---|---|---|---|
+| ICP and source config | Edit rubric, profile, and sources as data (anchor #1) | - | web | icp-config |
+| Prospect list | Browse and manage prospects and signals (anchor #3) | - | web | prospect-list |
+| Review and approve queue | Surface queued prospect + dossier + draft, log outcome (anchor #2) | - | web | review-queue |
+| Route handlers / Server actions | RSC reads, the enqueue-scan trigger, outcome logging | reads `db`, calls `jobs` | web | each anchor view |
+| Composition root | Start jobs, register workers and adapters - the only `kind -> instance` wiring point | `jobs`, `psrc` registry | boot | platform-runtime |
+| scan handler -> signals pipeline | Claim source, run connector, dedup, persist, tally | `SignalSource` via registry | worker | signal-ingestion |
+| qualify handler -> qualification core | Fan-out signal to person prospects, score against rubric, gate at >= 3 | `LLMProvider` | worker | qualification |
+| enrich handler -> enrichment core | Deep-enrich a qualified prospect into a dossier | `EnrichmentProvider` | worker | enrichment |
+| draft handler -> drafting core | Generate first-touch draft from dossier + profile | `LLMProvider` | worker | drafting |
+| normalize-expand handler -> expansion core | Company / content -> people before qualify | `EnrichmentProvider` | worker | normalize-expand (M2) |
+| SignalSource port + registry | The D4 connector contract + the `kind -> connector` map | port (D4) | both | signal-ingestion |
+| EnrichmentProvider port | The D4 deep-enrich contract | port (D4) | worker | enrichment |
+| LLMProvider port | Provider-neutral structured-output contract (D9, ADR-0003) | port (D9) | worker | llm-provider |
+| Connectors (fixture [test/dev only], linkedin-search, x-posts) | Fetch + normalize one source kind | implement `SignalSource` | worker | source-adapters; fixture from signal-ingestion |
+| Enrichment adapters (Apify, self-host browser) | Deep-enrich / scrape per the cost knob | implement `EnrichmentProvider` | worker | enrichment |
+| Anthropic adapter | Default LLM via Structured Outputs + 1h cache | implements `LLMProvider` | worker | llm-provider |
+| Prompts | Versioned qualify / draft prompts for `prompt_version` traceability | consumed by cores | worker | qualification, drafting |
+| config / db / jobs / log | The reused platform facades - no parallel mechanisms | - | both | platform-runtime, background-jobs |
+
+For unbuilt capabilities only the seam, port, and owning capability are load-bearing here; their
+internal shape is owned by each capability's design and is illustrative until that capability lands.
+
+### Web vs worker role mapping (ADR-0001 peel-safety)
+
+The web and worker components run in one process today but are split into the two roles above so the
+no-rewrite peel into a standalone `worker.ts` stays available. The peel-safety invariant: web and
+worker components share state only through Postgres (rows + pg-boss jobs) - no module-level mutable
+singletons, no in-process cache or event bus, no transaction spanning a request handler and a job.
+The domain cores are deliberately role-agnostic and depend on `db` only, so the same core is callable
+from a handler or a worker without dragging in queue or HTTP concerns. Where a stage must both write
+rows and enqueue the next job - the qualify fan-out persisting N prospects and queuing their next
+stage - the job handler, not the core, owns one Drizzle transaction passed to both the repo and
+`jobs.enqueue` (pg-boss `send` shares the same Postgres), so the writes and their follow-on jobs
+commit atomically while the core stays db-only. This is within a single job handler, so it does not
+violate the no-transaction-spanning-a-request-and-a-job invariant. The self-host browser is a separate
+OS process the browser adapter spawns on demand (ADR-0002), drawn as the external `Headless browser`
+box.
+
+### Ports and adapters direction
+
+The dependency-inversion seam (enforced by dependency-cruiser): cores and ports MUST NOT import
+adapters; adapters depend on (implement) ports, and an adapter is bound to a `kind`/provider only in
+the registry wired from the composition root. This is why a new source or provider is a new adapter
+file plus one registry line - never a change to a core, a port, or the pipeline. The rule exists for
+`SignalSource` today; `enrichment` and `llm-provider` extend it to their ports when they land. The
+build-enforced rule covers the adapter seam; the db-only and web/worker-share-only-via-Postgres
+invariants are reviewed convention, not yet build-enforced (a cores-must-not-import-jobs rule is a
+candidate to add when qualification lands).
+
+### L3 runtime flow - scan slice internals
+
+The internal view of the scan slice, revealing the handler/core/registry/port decomposition the
+container view hides; consistent with the Prospect lifecycle (a SignalPersisted event with no further
+enqueue yet, owned by qualification when it lands).
+
+```mermaid
+sequenceDiagram
+    participant Boot as Composition root
+    participant H as scan handler (worker role)
+    participant Core as signals pipeline core
+    participant Conn as connector adapter
+    participant DB as db facade
+
+    Note over Boot: registers adapters in the SignalSource registry (an in-process map), then registers the scan worker after startJobs
+    Boot->>H: register scan worker
+    Note over H: pg-boss delivers a source-scan job
+    H->>Core: runScan(sourceId)
+    Core->>DB: load source, open scan run
+    Note over Core: resolve connector by source.kind from the registry (in-process lookup)
+    loop each yielded RawItem
+        Core->>Conn: scan yields normalized item
+        Core->>Core: edge-validate with Zod
+        Core->>DB: insert on conflict do nothing, returning
+        Note over Core,DB: empty return = duplicate, counted dropped
+    end
+    Core->>DB: close scan run completed with counts
+    Note over Core: no downstream qualify enqueue yet, job graph stays closed
 ```

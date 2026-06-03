@@ -71,15 +71,22 @@ must stay consistent with it.
    self-host scraping).
 4. Qualify each prospect 1-5 against the ICP and gate at >= 3 - background job: qualifier
    (LLM provider).
-5. Deep-enrich the >= 3 prospects into a full dossier - background job (a provider or
-   self-host scraping).
-6. Draft a first touch, if drafting is enabled - background job (LLM provider).
+5. Optionally deep-enrich a qualified prospect into a full dossier - background job (a
+   provider or self-host scraping). **User-triggered and optional by default** (from a
+   prospect's detail or a batch grid multi-select), with an opt-in auto-enrich setting;
+   not an automatic stage ([ADR-0007](adr/0007-user-triggered-optional-enrichment.md)).
+6. Draft a first touch, if drafting is enabled - background job (LLM provider). By default
+   drafted from the signal; re-drafted from the dossier when a prospect is enriched.
 7. Review the dossier and draft, then act through the chosen channel - anchor view:
    review/approve queue (high judgment).
 8. Track the outcome against the original score - background job + tracking.
 
 Throughout, the CRM user works from the prospect/company list (an anchor view) to filter,
 tag, and open dossiers.
+
+An interactive, clickable view of this journey is being assembled as the prototype app
+([`src/app/prototype/`](../src/app/prototype/README.md)); each anchor view is mocked there before
+it is wired.
 
 ## 3. Locked decisions
 
@@ -89,7 +96,7 @@ tag, and open dossiers.
 | D2 | Automate intelligence; the LinkedIn action stays human-assisted. | The old stack's failure and ban risk were entirely in the action layer. ToS-safe, GTM-aligned. |
 | D3 | Signals are the top of funnel, not CSV. | Crunchbase ($100/mo) is gone. Signal listening also fuels the comment-first motion. |
 | D4 | All scraping/enrichment behind one `SignalSource` / `EnrichmentProvider` interface. Self-host Puppeteer/Playwright for cheap/public sources, Apify for authenticated/deep. | A port of `job-monitor`'s `ScraperBase`. Per-source cost knob; Apify keeps detection risk off the user's own account. (ADR-0002) |
-| D5 | Qualifier = port of `job-monitor`'s static 1-5 ICP scorer (alert at >= 3, platform-aware, structured output, anti-hallucination). Qualify scores on the signal as the cost gate; the first-touch draft is a **separate** LLM call after deep enrichment, grounded in the dossier (per the pipeline order). | Proven, cheap scorer, already written (M2). Splitting the draft out of job-monitor's bundled call is the one evolution - so the draft is written from the enriched dossier, not the thin signal (hyper-personalization). Ordering resolved at the C4 L2 review, 2026-05-24. |
+| D5 | Qualifier = port of `job-monitor`'s static 1-5 ICP scorer (alert at >= 3, platform-aware, structured output, anti-hallucination). Qualify uses the cheap signal as the cost gate; the first-touch draft is a **separate** LLM call after deep enrichment, grounded in the dossier (per the pipeline order). Refined by ADR-0005: the score is recorded per person (a Scoring against the prospect), not on the shared signal. Refined by ADR-0007: the draft is from the signal by default and enrichment is optional/user-triggered (re-drafting from the dossier), not an automatic pre-draft stage. | Proven, cheap scorer, already written (M2). Splitting the draft out of job-monitor's bundled call is the one evolution. Ordering resolved at the C4 L2 review, 2026-05-24; enrichment made optional/user-triggered by ADR-0007 (2026-06-01). |
 | D6 | The ICP rubric becomes config-as-data, not a hardcoded prompt. | Required for reuse by other CRM users and for the config UI. |
 | D7 | Log outcomes against scores from day one; outcome-driven tuning of the bar is a later additive milestone. | Lets the feedback loop become additive, not a migration. The learning loop is the "neo" differentiator. |
 | D8 | Entry point is configurable: multiple source types (LinkedIn search, CSV of companies, Google alerts, X posts, ...). | Already proven across 11 platforms in `job-monitor`. A new source is a new adapter, not a new pipeline. |
@@ -106,10 +113,16 @@ tag, and open dossiers.
                                company/content expand to people (Apify)
                  │
                  ▼
-  QUALIFY  (1-5 ICP scorer) ──► >= 3 ─► DEEP ENRICH ─► DRAFT touch ─► [ HUMAN QUEUE ] ─► you act ─► TRACK + measure
-   the cost gate                 (Apify,         (profile config   anchor view,        manual,        outcomes logged
-   and noise cut                  per prospect)   + signal ctx)     high-judgment       ToS-safe       against the score (D7)
+  QUALIFY  (1-5 ICP scorer) ──► >= 3 ──────────────► DRAFT touch ─► [ HUMAN QUEUE ] ─► you act ─► TRACK + measure
+   the cost gate                 │   (default path)  (profile config   anchor view,        manual,        outcomes logged
+   and noise cut                 └─► DEEP ENRICH ─┘   + signal ctx)     high-judgment       ToS-safe       against the score (D7)
+                                     (optional, user- or auto-triggered; Apify per prospect; re-drafts from the dossier)
 ```
+
+Deep enrichment is **optional and user-triggered by default** (with an opt-in auto-enrich
+setting), not an automatic stage - the default path is qualify -> draft from the signal, and
+enrichment is a user/auto-triggered side-step that re-drafts from the dossier
+([ADR-0007](adr/0007-user-triggered-optional-enrichment.md), refining D5).
 
 Anchor views (the only hand-built UI): **ICP/profile config, lead list, review/approve
 queue.** Everything else is jobs + generative output.
@@ -132,14 +145,16 @@ normalize + expand layer sits before the qualifier.
 | Google alerts / news | content | extract entity -> resolve -> expand |
 
 Data-model consequence: a **signal / raw item is not a lead**. One company signal fans
-out to N person leads (one-to-many). Model that from the start.
+out to N person leads (one-to-many) - the fan-out invariant frozen in
+[ADR-0005](adr/0005-signal-to-prospect-fan-out.md). Model that from the start.
 
 Canonical nouns: **Source** (configured origin, config-as-data), **Connector** (module that
 fetches and normalizes one source type), **RawItem** (normalized, un-deduped), **Signal**
-(deduped, persisted). The connector boundary - how a source plugs in - is the single,
-pluggable interface of D4; its system-level view is in
-[docs/architecture/system-context.md](architecture/system-context.md). (A per-area domain
-model for these entities is not yet promoted.)
+(deduped, persisted), **Prospect** (a person under evaluation, fanned out from a signal),
+**Scoring** (the per-person ICP rating). The connector boundary - how a source plugs in - is the
+single, pluggable interface of D4. The full data model (ERD, lifecycle, events) is promoted in
+[docs/architecture/domain-model.md](architecture/domain-model.md) and the ubiquitous language in
+[docs/architecture/glossary.md](architecture/glossary.md).
 
 ### Cost gate flips for company/content sources
 
@@ -216,7 +231,7 @@ In:
   search and X - because they need no expand layer)
 - Normalize + expand layer (company -> people)
 - Qualifier (the ported 1-5 scorer)
-- Deep enrichment via Apify (gated by the qualifier)
+- Deep enrichment via Apify, optional and user-triggered by default with opt-in auto (ADR-0007)
 - Personalized draft from profile + signal context
 - Review/approve queue (anchor view)
 - Assisted action: queue hands you the drafted touch + research dossier + a deep link;
@@ -245,9 +260,14 @@ Deferred:
   headless-browser process). RESOLVED** by the `c4-level2-architecture` change: see
   [docs/architecture/system-design.md](architecture/system-design.md), with ADR-0002
   (headless-browser scraping), ADR-0003 (LLMProvider port), and ADR-0004 (pg-boss facade).
+- **The whole-pipeline data model and the C4 L3 component decomposition. RESOLVED** by the
+  `c4-level3-and-domain-model` change: the data model (ERD, lifecycle, events) is in
+  [docs/architecture/domain-model.md](architecture/domain-model.md) and the component view in
+  [docs/architecture/system-design.md](architecture/system-design.md) (Components C4 L3), with
+  ADR-0005 (signal -> N prospect fan-out, refines D5) and ADR-0006 (pre-code L3 view as living canon).
 - Adapter shipping order beyond the first two person-yielding sources.
 - When the feedback-loop / eval milestone lands (data accrues from day one regardless).
-- Exact "assisted action" UI affordances.
+- Exact "assisted action" UI affordances - being explored via the review/approve queue wireframe (`src/app/prototype/review-queue`); see the [anchor-view wireframes explore note](explore/2026-05-26-anchor-view-wireframes.md).
 - Apify cost validation at the real (low) volume; where the self-host vs Apify line
   actually falls per source.
 - Legal/PII posture once productized (storing third-party prospect data on behalf of

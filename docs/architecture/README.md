@@ -16,10 +16,14 @@ BY SCOPE into the homes below (not copied file-to-file), and ADR drafts move to 
   sections (required - see "Canon integrity" below). System-wide views may live here as
   sections until they grow into their own file.
 - `glossary.md` - the ubiquitous language. ONE per bounded context (we have one - the CRM
-  core), so one glossary today.
+  core), so one glossary today. Present (promoted by `c4-level3-and-domain-model`).
+- `domain-model.md` - the whole-pipeline ERD, lifecycle, and domain events. Top-level and flat
+  while there is one implicit area (rule 5); moves into `areas/<area>/` when the model splits.
+  Present (promoted by `c4-level3-and-domain-model`).
 - `system-context.md` - C4 level 1 (the system + external actors). System-wide, one file.
-- `system-design.md` - C4 level 2 (containers + runtime flows). System-wide while there is one
-  implicit area (rule 5); moves into `areas/<area>/` when the model splits.
+- `system-design.md` - C4 levels 2 and 3 (containers + runtime flows, plus the pre-code
+  component view per ADR-0006). System-wide while there is one implicit area (rule 5); moves
+  into `areas/<area>/` when the model splits.
 - `cross-cutting.md` - observability, secrets, trust boundaries, data sensitivity, scaling.
   System-wide, one file.
 - `deployment.md` - deployment topology. System-wide, present only when where-things-run is

@@ -19,7 +19,15 @@
     },
     {
       "path": "system-design.md",
-      "requiredSections": ["Containers", "Key runtime flows"]
+      "requiredSections": ["Containers", "Key runtime flows", "Components (C4 L3)"]
+    },
+    {
+      "path": "glossary.md",
+      "requiredSections": []
+    },
+    {
+      "path": "domain-model.md",
+      "requiredSections": ["Entity model", "Lifecycle", "Domain events"]
     },
     {
       "path": "cross-cutting.md",

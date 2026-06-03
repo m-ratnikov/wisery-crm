@@ -196,6 +196,10 @@ artifacts:
       datastore, any sidecar) and the protocols between them. Honor the runtime
       decision in the relevant ADR rather than re-deciding it. Do NOT go to
       component (L3) or code (L4) level - that is premature pre-code.
+      (Project exception for wisery-crm: this repo maintains a pre-code C4 L3
+      component view as living canon per ADR-0006
+      [docs/adr/0006-pre-code-l3-component-view.md], so an L3 component view here
+      is intentional, not a violation.)
 
       - **Key runtime flows**: 1-3 Mermaid `sequenceDiagram`s for the flows that
       carry the most risk or judgment (e.g., the qualify-then-gate flow, the

@@ -75,12 +75,12 @@ multi-tenant plumbing (overview section 7); autonomous / automated sending (neve
 
 ## Open sequencing decisions
 
-- **Enrichment placement (M1 vs M2).** D5's intent is "draft from the enriched dossier, not the thin
-  signal" - the hyper-personalization thesis - which argues for `enrichment` *before* `drafting` in
-  M1. It currently sits in M2 on the bet that person sources (LinkedIn/X) yield a signal rich enough
-  to draft from, with Apify enrichment thickening later (the L2 sequence diagram already treats
-  deep-enrich as `opt`). Cheaper, faster first loop; thinner interim drafts. Revisit when `drafting`
-  is proposed.
+- **Enrichment placement (M1 vs M2). RESOLVED** by [ADR-0007](adr/0007-user-triggered-optional-enrichment.md)
+  (2026-06-01): enrichment is in M1 but **optional and user-triggered by default** (with an opt-in
+  auto-enrich setting), not an automatic pre-draft stage. The default path is qualify -> draft from
+  the signal (cheaper, faster first loop); the user (or the auto setting) triggers deep-enrich, which
+  re-drafts from the dossier. This resolves the D5 tension - the signal-level score stays the cost
+  gate and enrichment is a user-controlled spend on top.
 - **Source shipping order beyond the first two person adapters** (product-overview open question).
 - **Whether `icp-config`'s anchor UI lags a seeded config** - qualification can start against a config
   seeded from `job-monitor`'s `ICP_SYSTEM_PROMPT` before the editing UI exists.
