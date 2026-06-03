@@ -9,6 +9,7 @@ const EnvSchema = z.object({
   PGBOSS_DB_POOL_MAX: z.coerce.number().int().positive().default(5),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
   ANTHROPIC_API_KEY: z.string().min(1).optional(),
+  APIFY_API_TOKEN: z.string().min(1).optional(),
 });
 
 export type Config = {
@@ -20,6 +21,7 @@ export type Config = {
   pgbossDbPoolMax: number;
   logLevel: string;
   anthropicApiKey?: string;
+  apifyApiToken?: string;
 };
 
 // Pure, testable: throws a clear, aggregated error naming every bad var.
@@ -41,6 +43,7 @@ export function parseEnv(source: NodeJS.ProcessEnv = process.env): Config {
     pgbossDbPoolMax: e.PGBOSS_DB_POOL_MAX,
     logLevel: e.LOG_LEVEL,
     anthropicApiKey: e.ANTHROPIC_API_KEY,
+    apifyApiToken: e.APIFY_API_TOKEN,
   };
 }
 

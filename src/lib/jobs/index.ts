@@ -1,6 +1,8 @@
 import "server-only";
-import { PgBoss, type Job, type SendOptions } from "pg-boss";
+import { PgBoss, fromDrizzle, type Job, type SendOptions } from "pg-boss";
+import { sql } from "drizzle-orm";
 import { getConfig } from "@/lib/config/env";
+import type { DbTx } from "@/lib/db";
 import { logger } from "@/lib/log";
 
 // pg-boss reached through a thin facade (ADR-0004): one localized call site, not
@@ -30,6 +32,21 @@ export async function enqueue<T extends object>(
   options?: SendOptions,
 ): Promise<string | null> {
   return getBoss().send(queue, data, options);
+}
+
+// Enqueue a job ON an existing Drizzle transaction (ADR-0009): the job INSERT rides the
+// caller's transaction and connection via pg-boss's Drizzle adapter, so a stage's state
+// write and its follow-on job commit together or roll back together - no strand window.
+// Requires pg-boss to share the app's Postgres database (the default); a split pg-boss
+// database cannot be written in the app's transaction. Use this for pipeline handoffs;
+// the fire-and-forget `enqueue` above stays for user-triggered (manual/batch) enqueues.
+export async function enqueueInTx<T extends object>(
+  tx: DbTx,
+  queue: string,
+  data: T,
+  options?: SendOptions,
+): Promise<string | null> {
+  return getBoss().send(queue, data, { ...options, db: fromDrizzle(tx, sql) });
 }
 
 export async function work<T>(

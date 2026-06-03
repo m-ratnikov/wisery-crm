@@ -14,4 +14,23 @@ describe("config: env validation", () => {
     expect(c.appDbPoolMax).toBe(10);
     expect(c.logLevel).toBe("info");
   });
+
+  it("derives isDev from NODE_ENV", () => {
+    const base = { APP_DATABASE_URL: "postgres://x" };
+    expect(parseEnv({ ...base, NODE_ENV: "development" }).isDev).toBe(true);
+    expect(parseEnv({ ...base, NODE_ENV: "production" }).isDev).toBe(false);
+  });
+
+  it("aggregates every bad var into one newline-separated error", () => {
+    const run = () => parseEnv({ APP_DB_POOL_MAX: "-1" } as unknown as NodeJS.ProcessEnv);
+    // Both the missing required var and the invalid one are named...
+    expect(run).toThrow(/APP_DATABASE_URL/);
+    expect(run).toThrow(/APP_DB_POOL_MAX/);
+    // ...on separate, prefixed lines (the aggregation contract).
+    try {
+      run();
+    } catch (err) {
+      expect((err as Error).message).toMatch(/\n {2}- /);
+    }
+  });
 });

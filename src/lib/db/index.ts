@@ -22,6 +22,12 @@ export function getDb() {
   return dbInstance;
 }
 
+// The transaction handle drizzle passes to a `db.transaction(async (tx) => ...)` callback.
+// Named here so a stage can take an injected `enqueueNext(tx, ...)` that enqueues the next
+// pipeline job on the SAME transaction (atomic handoff, ADR-0009) without leaking drizzle
+// internals into every signature.
+export type DbTx = Parameters<Parameters<ReturnType<typeof getDb>["transaction"]>[0]>[0];
+
 // Walking-skeleton connectivity probe (used by the health route + tests).
 export async function checkDbConnection(): Promise<boolean> {
   const { rows } = await getPool().query<{ ok: number }>("select 1 as ok");

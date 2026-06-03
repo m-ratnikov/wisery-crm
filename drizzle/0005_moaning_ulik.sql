@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "drafts_one_selected_uq" ON "drafts" USING btree ("prospect_id") WHERE "drafts"."status" = 'selected';
