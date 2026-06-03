@@ -10,6 +10,10 @@ export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts"],
     setupFiles: ["dotenv/config"],
+    // Integration suites share one Postgres (the dev DB via TEST_DATABASE_URL) and each
+    // truncates the tables it owns. Run test files sequentially so one suite's inserts
+    // never race another's FK-ordered truncation. The suite is small; correctness first.
+    fileParallelism: false,
     alias: {
       "@": srcDir,
       "server-only": emptyStub,
@@ -21,19 +25,33 @@ export default defineConfig({
       include: ["src/**/*.{ts,tsx}"],
       exclude: [
         "src/**/*.test.ts",
-        "src/lib/db/schema.ts", // empty placeholder until the first entity lands
         "**/*.d.ts",
+        // Declarative Drizzle table/enum definitions (DDL as data), not logic. Validated
+        // by db:generate (migration SQL review), db:migrate, and the integration tests;
+        // its drizzle-internal callbacks (.$onUpdate, index builders) are not meaningfully
+        // unit-coverable, so per-file line coverage here would only invite performative tests.
+        "src/lib/db/schema.ts",
         // Pre-harness runtime/bootstrap glue + Next scaffolding: exercised by the
         // live boot smoke and integration, not unit tests (see docs/engineering.md).
         "src/instrumentation.ts",
         "src/lib/runtime/**",
         "src/app/**",
         "src/lib/log/**",
-        // Thin pg-boss facade (delegation to pg-boss); it gains real coverage when
-        // the first capability enqueues through it with isolated-schema integration
-        // tests. Excluded until then rather than asserting a performative or
-        // dev-schema-touching test.
+        // Thin pg-boss wrappers (delegation to pg-boss). Revisited at signal-ingestion
+        // (its tasks 8.1): the jobs facade stays pure delegation, and scan-queue is a
+        // queue/worker wrapper over it whose only logic is calling the fully-tested
+        // runScan core. Both are exercised by the live boot, not by dev-schema-touching
+        // or performative tests; the scan pipeline itself is covered by integration.
         "src/lib/jobs/**",
+        "src/lib/signals/scan-queue.ts",
+        "src/lib/qualify/qualify-queue.ts",
+        "src/lib/draft/draft-queue.ts",
+        "src/lib/enrich/enrich-queue.ts",
+        // Network adapters needing an API key/token; exercised by a live smoke, not unit
+        // tests (same precedent as the pg-boss wrappers). Each port's contract, fake, and
+        // pipeline are unit/integration-covered.
+        "src/lib/llm/anthropic.ts",
+        "src/lib/enrich/apify.ts",
       ],
       thresholds: {
         // Per-file so a new untested module cannot hide behind global coverage.

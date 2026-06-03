@@ -33,11 +33,35 @@ module.exports = {
       to: { path: "^src/lib/runtime" },
     },
 
-    // --- Extension point: port/adapter rules land here as seams are introduced ---
-    // When the D4/D9 ports arrive, add rules such as:
-    //   adapters (src/lib/**/adapters) may depend on ports, never the reverse;
-    //   the domain may not depend on any adapter (depend on the port interface).
-    // Keep each rule named and commented with the decision it enforces.
+    // --- Port/adapter rules: each protects a seam by the build (one per decision) ---
+    // These forbid ANY module except the single composition point from importing a concrete
+    // adapter, so the port can never be skipped - not just by the port file, but by a
+    // pipeline, a Server Action, or any future consumer (the gap that lets a "save a hop"
+    // import silently break the LLM-agnostic / inverted seam while `verify` stays green).
+    {
+      name: "signals-port-not-to-adapters",
+      severity: "error",
+      comment:
+        "D-M (signal-ingestion): only registry.ts (the composition point wiring source.kind to an instance) may import concrete connectors. The SignalSource port (connector.ts), the scan pipeline, and every other consumer reach connectors only through the registry (dependency inversion).",
+      from: { pathNot: "^src/lib/signals/(registry\\.ts$|connectors/)" },
+      to: { path: "^src/lib/signals/connectors/" },
+    },
+    {
+      name: "llm-port-not-to-adapters",
+      severity: "error",
+      comment:
+        "D-I (llm-provider): only index.ts (getLLM) may import a concrete LLM adapter (anthropic.ts / fake.ts). The LLMProvider port and all consumers depend on the port and receive an adapter by injection (dependency inversion, ADR-0003).",
+      from: { pathNot: "^src/lib/llm/(index|anthropic|fake)\\.ts$" },
+      to: { path: "^src/lib/llm/(anthropic|fake)\\.ts$" },
+    },
+    {
+      name: "enrich-port-not-to-adapters",
+      severity: "error",
+      comment:
+        "D-C (enrichment): only index.ts (getEnrichmentProvider) may import a concrete enrichment adapter (apify.ts / fake.ts). The EnrichmentProvider port and all consumers depend on the port and receive an adapter by injection (dependency inversion, ADR-0002/D4).",
+      from: { pathNot: "^src/lib/enrich/(index|apify|fake)\\.ts$" },
+      to: { path: "^src/lib/enrich/(apify|fake)\\.ts$" },
+    },
   ],
   options: {
     doNotFollow: { path: "(^|/)node_modules/" },

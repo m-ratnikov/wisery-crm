@@ -4,5 +4,5 @@
   "minLines": 5,
   "reporters": ["consoleFull"],
   "absolute": true,
-  "ignore": ["**/*.test.{ts,tsx}"]
+  "ignore": ["**/*.test.{ts,tsx}", "**/prototype/**"]
 }
