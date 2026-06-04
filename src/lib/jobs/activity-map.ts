@@ -20,6 +20,12 @@ import type {
 // can show "+N more". The aggregate counts (getQueues) remain exact regardless.
 export const MAX_WAITING_PER_QUEUE = 50;
 
+// pg-boss maintains its own internal queues (cron/timekeeping, e.g. `__pgboss__send-it`) under
+// this reserved name prefix. They are engine machinery, not the user's background work, so the
+// monitor hides them from the displayed queue list. getWipData liveness collection is unchanged
+// (still includeInternal); an internal wip entry simply has no surviving queue to attach to.
+export const INTERNAL_QUEUE_PREFIX = "__pgboss__";
+
 export const msToIso = (ms: number | null | undefined): string | null =>
   ms == null ? null : new Date(ms).toISOString();
 
@@ -76,19 +82,21 @@ export function assembleActivity(
 ): JobActivitySnapshot {
   const wipByQueue = new Map<string, WorkerLiveness>();
   for (const w of wip) wipByQueue.set(w.name, mapWorkerLiveness(w));
-  const result: QueueActivity[] = queues.map((q) => {
-    const waitingRows = waitingByQueue.get(q.name) ?? [];
-    return {
-      name: q.name,
-      activeCount: q.activeCount,
-      queuedCount: q.queuedCount,
-      deferredCount: q.deferredCount,
-      totalCount: q.totalCount,
-      worker: wipByQueue.get(q.name) ?? null,
-      waiting: waitingRows.slice(0, MAX_WAITING_PER_QUEUE).map(mapJobActivity),
-      waitingTotal: waitingRows.length,
-    };
-  });
+  const result: QueueActivity[] = queues
+    .filter((q) => !q.name.startsWith(INTERNAL_QUEUE_PREFIX))
+    .map((q) => {
+      const waitingRows = waitingByQueue.get(q.name) ?? [];
+      return {
+        name: q.name,
+        activeCount: q.activeCount,
+        queuedCount: q.queuedCount,
+        deferredCount: q.deferredCount,
+        totalCount: q.totalCount,
+        worker: wipByQueue.get(q.name) ?? null,
+        waiting: waitingRows.slice(0, MAX_WAITING_PER_QUEUE).map(mapJobActivity),
+        waitingTotal: waitingRows.length,
+      };
+    });
   return { status: "ok", queues: result };
 }
 

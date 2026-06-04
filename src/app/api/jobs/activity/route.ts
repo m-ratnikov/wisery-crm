@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { listJobActivity, listSchedules } from "@/lib/jobs";
 import type { JobsMonitorData } from "@/lib/jobs/activity";
+import { listScanHistory } from "@/lib/signals/scan-history";
 
 // Live job state, so never cached: each poll re-reads the running snapshot.
 export const dynamic = "force-dynamic";
@@ -12,7 +13,11 @@ export const dynamic = "force-dynamic";
 // the rest of the wired app. Job payloads can reference prospect data, so authorization MUST
 // be added HERE at the productization milestone - this route is that single insertion point.
 export async function GET() {
-  const [activity, schedules] = await Promise.all([listJobActivity(), listSchedules()]);
-  const body: JobsMonitorData = { activity, schedules };
+  const [activity, schedules, scanHistory] = await Promise.all([
+    listJobActivity(),
+    listSchedules(),
+    listScanHistory(),
+  ]);
+  const body: JobsMonitorData = { activity, schedules, scanHistory };
   return NextResponse.json(body);
 }

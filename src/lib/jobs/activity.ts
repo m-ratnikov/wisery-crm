@@ -7,6 +7,8 @@
 // Timestamps are ISO strings (not Date) so the server-rendered first paint and the polled
 // /api/jobs/activity JSON have one identical shape - no Date/string drift.
 
+import type { ScanHistorySnapshot } from "@/lib/signals/scan-history-view";
+
 export interface WorkerLiveness {
   state: string; // WorkerState: created | active | stopping | stopped
   inFlight: number; // jobs this queue's worker is processing right now
@@ -52,8 +54,13 @@ export type ScheduleSnapshot =
   | { status: "ok"; schedules: ScheduleInfo[] }
   | { status: "unavailable"; reason: string };
 
-// The shape returned by GET /api/jobs/activity and rendered by the monitor.
+// The shape returned by GET /api/jobs/activity and rendered by the monitor. It composes the
+// pg-boss introspection (activity + schedules) with the scan-run-history read-model. The
+// ScanHistorySnapshot import is TYPES ONLY (no runtime, no server-only), so the pg-boss read
+// path and the domain read path stay independent at runtime; the page/route is the composition
+// point (ADR-0012).
 export interface JobsMonitorData {
   activity: JobActivitySnapshot;
   schedules: ScheduleSnapshot;
+  scanHistory: ScanHistorySnapshot;
 }

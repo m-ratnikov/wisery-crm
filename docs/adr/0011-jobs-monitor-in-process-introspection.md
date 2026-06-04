@@ -1,6 +1,6 @@
 # ADR-0011: Job-activity introspection reads in-process worker state (bounded peel-safety exception)
 
-- Status: proposed
+- Status: accepted
 - Date: 2026-06-04
 - Supersedes: none
 - Source: docs/explore/2026-06-04-jobs-monitor-peel-safety.md; the `job-activity-monitor` change (design.md), raised by the canon code-review lens

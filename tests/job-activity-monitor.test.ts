@@ -169,6 +169,31 @@ describe("job-activity-monitor: assembleActivity", () => {
     expect(draft.waitingTotal).toBe(0);
   });
 
+  it("excludes pg-boss internal queues while passing application queues through", () => {
+    const snap = assembleActivity(
+      [
+        queue({ name: "__pgboss__send-it" }),
+        queue({ name: "__pgboss__maintenance" }),
+        queue({ name: "source-scan" }),
+        queue({ name: "qualify" }),
+        queue({ name: "enrich" }),
+        queue({ name: "draft" }),
+        queue({ name: "heartbeat" }),
+      ],
+      [],
+      new Map(),
+    );
+    expect(snap.status).toBe("ok");
+    if (snap.status !== "ok") return;
+    expect(snap.queues.map((q) => q.name)).toEqual([
+      "source-scan",
+      "qualify",
+      "enrich",
+      "draft",
+      "heartbeat",
+    ]);
+  });
+
   it("defaults waiting to empty when a queue has no findJobs entry", () => {
     const snap = assembleActivity([queue({ name: "enrich" })], [], new Map());
     expect(snap.status).toBe("ok");

@@ -30,6 +30,6 @@
 ## 6. Docs and definition of done
 
 - [x] 6.1 Update `src/app/prototype/README.md` screen registry to record the new wired `/jobs` screen and the capability it surfaces.
-- [ ] 6.2 Add the `## Architecture` section links on the canonical `job-activity-monitor` spec after archive (ADR-0001, ADR-0004, background-jobs spec, the jobs screen). (Archive-time step.)
+- [x] 6.2 Add the `## Architecture` section links on the canonical `job-activity-monitor` spec after archive (ADR-0001, ADR-0004, background-jobs spec, the jobs screen). (Archive-time step.) Done: ADR-0011 now accepted, so the section also links it.
 - [x] 6.3 Run `npm run verify` to green (typecheck, lint, format, dependency-cruiser, jscpd, per-file coverage, build). Green: build lists `/jobs` and `/api/jobs/activity`; activity.ts at 100% lines / 96% branch.
 - [x] 6.4 Ran the `code-review` loop (canon + atlas, read-only). Round 1 raised 2 blockers + majors; applied fixes (spec reconciled to API reality, three-file type/runtime/IO split, waiting-row cap, narrowed try/catch). Re-ran `verify` green, re-reviewed the delta: all blockers/majors resolved, only nits (fixed mapScheduleInfo return type). ONE archive gate remains, non-code: the peel-safety exception (globalThis singleton + getWipData in-memory read vs ADR-0001) needs a human-signed ADR or ADR-0001 correction before archive - the agent must not self-accept it (see design.md Risks / Open Questions).

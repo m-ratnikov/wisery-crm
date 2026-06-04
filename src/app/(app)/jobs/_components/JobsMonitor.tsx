@@ -7,6 +7,7 @@ import type {
   ScheduleInfo,
   WorkerLiveness,
 } from "@/lib/jobs/activity";
+import type { ScanHistorySnapshot, ScanRunView } from "@/lib/signals/scan-history-view";
 
 // The one client component in this feature: live status is an interval timer plus a fetch
 // that re-renders, which is inherently client state. It takes the server-rendered snapshot as
@@ -23,20 +24,54 @@ const QUEUE_LABELS: Record<string, string> = {
 };
 const queueLabel = (name: string) => QUEUE_LABELS[name] ?? name;
 
+// A plain one-line description of what each queue does, so a non-engineer can read the monitor.
+const QUEUE_DESCRIPTIONS: Record<string, string> = {
+  "source-scan": "Discovers new signals from your connected sources.",
+  qualify: "Scores a discovered person against your ICP rubric.",
+  "qualify-prospect": "Scores a manually added lead against your ICP rubric.",
+  enrich: "Builds a deep research dossier for a prospect.",
+  draft: "Writes a personalized first-touch message for a prospect.",
+  heartbeat: "Internal liveness check that proves the worker is running.",
+};
+const queueDescription = (name: string) => QUEUE_DESCRIPTIONS[name] ?? "";
+
 // Deterministic UTC clock slice straight from the ISO string - no Date math, so the
 // server-rendered first paint and the client hydrate identically (no hydration mismatch).
 const clock = (iso: string | null) => (iso ? iso.slice(11, 19) + " UTC" : "-");
+
+// Human relative time. `now` is null until the client has mounted (set in an effect), so the
+// server render and the first client paint both fall back to the deterministic clock slice -
+// the relative phrasing only appears after hydration, never causing a mismatch.
+function ago(iso: string | null, now: number | null): string {
+  if (!iso) return "-";
+  if (now == null) return clock(iso);
+  const diffMs = now - Date.parse(iso);
+  if (diffMs < 45_000) return "just now";
+  const min = Math.floor(diffMs / 60_000);
+  if (min < 60) return `${min} min ago`;
+  const hr = Math.floor(min / 60);
+  if (hr < 24) return `${hr} h ago`;
+  return `${Math.floor(hr / 24)} d ago`;
+}
 
 export function JobsMonitor({ initialData }: { initialData: JobsMonitorData }) {
   const [data, setData] = useState<JobsMonitorData>(initialData);
   const [live, setLive] = useState(true);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  // Wall-clock reference for relative times; null on the server and first paint (see `ago`),
+  // then seeded after mount and refreshed each poll so "min ago" stays current.
+  const [now, setNow] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    // Seed the relative-time clock just after mount (deferred via a 0ms timer, so it is not a
+    // synchronous setState in the effect body). Until it fires, `ago` shows the SSR-safe UTC
+    // slice, so the first client paint matches the server render.
+    const seed = setTimeout(() => setNow(Date.now()), 0);
 
     const tick = async () => {
+      setNow(Date.now());
       if (document.hidden) {
         setLive(false);
         timer = setTimeout(() => void tick(), POLL_MS);
@@ -60,12 +95,13 @@ export function JobsMonitor({ initialData }: { initialData: JobsMonitorData }) {
     document.addEventListener("visibilitychange", onVisibility);
     return () => {
       cancelled = true;
+      clearTimeout(seed);
       if (timer) clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
 
-  const { activity, schedules } = data;
+  const { activity, schedules, scanHistory } = data;
 
   return (
     <div className="flex flex-1 flex-col bg-zinc-50 dark:bg-zinc-950">
@@ -74,7 +110,8 @@ export function JobsMonitor({ initialData }: { initialData: JobsMonitorData }) {
           <div>
             <h1 className="text-lg font-semibold tracking-tight">Background jobs</h1>
             <p className="mt-1 text-sm text-zinc-500">
-              Live view of the in-process pipeline - running and queued work, plus schedules.
+              Live view of the in-process pipeline - what each stage is doing now, recent scans, and
+              schedules.
             </p>
           </div>
           <span
@@ -92,8 +129,10 @@ export function JobsMonitor({ initialData }: { initialData: JobsMonitorData }) {
         {activity.status === "unavailable" ? (
           <RuntimeUnavailable reason={activity.reason} />
         ) : (
-          <QueueList queues={activity.queues} />
+          <QueueList queues={activity.queues} now={now} />
         )}
+
+        <ScanHistorySection scanHistory={scanHistory} now={now} />
 
         <section className="mt-8">
           <h2 className="mb-3 text-sm font-semibold">Scheduled jobs</h2>
@@ -128,55 +167,60 @@ function RuntimeUnavailable({ reason }: { reason: string }) {
   );
 }
 
-function QueueList({ queues }: { queues: QueueActivity[] }) {
-  const hasWork = queues.some((q) => q.activeCount > 0 || q.waiting.length > 0);
+function QueueList({ queues, now }: { queues: QueueActivity[]; now: number | null }) {
+  const hasWork = queues.some((q) => q.activeCount > 0 || q.queuedCount > 0 || q.deferredCount > 0);
   return (
     <>
       {!hasWork ? (
         <p className="mb-4 rounded-lg border border-dashed border-zinc-300 bg-white p-4 text-center text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900">
-          No work in flight - every queue is idle.
+          Nothing running right now - every stage is idle and waiting for work.
         </p>
       ) : null}
       <ul className="space-y-3">
         {queues.map((q) => (
-          <QueueCard key={q.name} queue={q} />
+          <QueueCard key={q.name} queue={q} now={now} />
         ))}
       </ul>
     </>
   );
 }
 
-function QueueCard({ queue }: { queue: QueueActivity }) {
-  const running = queue.activeCount > 0 || (queue.worker?.inFlight ?? 0) > 0;
-  const idle = !running && queue.waiting.length === 0;
+function QueueCard({ queue, now }: { queue: QueueActivity; now: number | null }) {
+  const inFlight = queue.activeCount > 0 || (queue.worker?.inFlight ?? 0) > 0;
+  // queuedCount (due now) and deferredCount (scheduled / retry backoff) are distinct,
+  // non-overlapping getQueues buckets; both mean work is pending, so neither alone is "Idle".
+  const waitingCount = queue.queuedCount + queue.deferredCount;
+  const status = inFlight ? "Running" : waitingCount > 0 ? "Queued" : "Idle";
+  const description = queueDescription(queue.name);
+
   return (
     <li className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
       <div className="flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
-          {running ? (
-            <span
-              className="inline-block h-2 w-2 animate-pulse rounded-full bg-emerald-500"
-              aria-hidden
-            />
-          ) : (
-            <span
-              className="inline-block h-2 w-2 rounded-full bg-zinc-300 dark:bg-zinc-600"
-              aria-hidden
-            />
-          )}
+          <span
+            className={`inline-block h-2 w-2 rounded-full ${
+              inFlight
+                ? "animate-pulse bg-emerald-500"
+                : waitingCount > 0
+                  ? "bg-amber-400"
+                  : "bg-zinc-300 dark:bg-zinc-600"
+            }`}
+            aria-hidden
+          />
           <span className="text-sm font-semibold">{queueLabel(queue.name)}</span>
-          <span className="rounded bg-zinc-100 px-1.5 py-0.5 font-mono text-[11px] text-zinc-500 dark:bg-zinc-800">
-            {queue.name}
-          </span>
         </div>
-        <div className="flex shrink-0 gap-1.5">
-          <CountBadge label="active" value={queue.activeCount} tone="emerald" />
-          <CountBadge label="queued" value={queue.queuedCount} tone="amber" />
-          <CountBadge label="deferred" value={queue.deferredCount} tone="zinc" />
-        </div>
+        <StatusPill status={status} />
       </div>
 
-      {queue.worker ? <WorkerLine worker={queue.worker} /> : null}
+      {description ? <p className="mt-1.5 text-xs text-zinc-500">{description}</p> : null}
+
+      <p className="mt-1.5 text-xs text-zinc-500">{queueStatusLine(queue, inFlight, now)}</p>
+
+      {queue.worker?.lastError ? (
+        <p className="mt-1 text-xs text-rose-600 dark:text-rose-400">
+          Last error {ago(queue.worker.lastErrorOn, now)}: {queue.worker.lastError}
+        </p>
+      ) : null}
 
       {queue.waiting.length > 0 ? (
         <ul className="mt-3 space-y-1 border-t border-zinc-100 pt-3 dark:border-zinc-800">
@@ -188,14 +232,14 @@ function QueueCard({ queue }: { queue: QueueActivity }) {
               <span className="font-mono text-zinc-400">{j.id.slice(0, 8)}</span>
               <span className="flex items-center gap-2">
                 <span className={j.state === "retry" ? "text-amber-600 dark:text-amber-400" : ""}>
-                  {j.state}
+                  {j.state === "retry" ? "retrying" : "waiting"}
                 </span>
                 {j.retryCount > 0 ? (
                   <span className="text-zinc-400">
-                    retry {j.retryCount}/{j.retryLimit}
+                    attempt {j.retryCount + 1} of {j.retryLimit + 1}
                   </span>
                 ) : null}
-                <span className="text-zinc-400">queued {clock(j.createdOn)}</span>
+                <span className="text-zinc-400">since {ago(j.createdOn, now)}</span>
               </span>
             </li>
           ))}
@@ -205,64 +249,98 @@ function QueueCard({ queue }: { queue: QueueActivity }) {
             </li>
           ) : null}
         </ul>
-      ) : idle ? (
-        <p className="mt-2 text-xs text-zinc-400">idle</p>
       ) : null}
     </li>
   );
 }
 
-function WorkerLine({ worker }: { worker: WorkerLiveness }) {
-  // Active work is surfaced as running-since liveness (not per-job rows): when the worker has
-  // jobs in flight, show when the running work started; otherwise show the last completed run.
-  const running = worker.inFlight > 0;
+// One human-readable status line per queue: what it is doing now, or when it last ran. Replaces
+// the active/queued/deferred badge row and the raw "worker active - last run ... (1 ms)" line.
+function queueStatusLine(queue: QueueActivity, inFlight: boolean, now: number | null): string {
+  const worker: WorkerLiveness | null = queue.worker;
+  if (inFlight) {
+    // Postgres active count and the in-process worker's in-flight count can disagree (timing,
+    // or another worker holds the job); take the larger so a "Running" card never says "0 jobs".
+    const count = Math.max(queue.activeCount, queue.worker?.inFlight ?? 0);
+    const since = worker?.lastJobStartedOn ? ` (started ${ago(worker.lastJobStartedOn, now)})` : "";
+    return `Running ${count} job${count === 1 ? "" : "s"}${since}.`;
+  }
+  const waitingCount = queue.queuedCount + queue.deferredCount;
+  if (waitingCount > 0) {
+    return `${waitingCount} job${waitingCount === 1 ? "" : "s"} waiting to run.`;
+  }
+  if (worker?.lastJobStartedOn) {
+    return `Idle - last ran ${ago(worker.lastJobStartedOn, now)}.`;
+  }
+  return "Idle - no work yet.";
+}
+
+function StatusPill({ status }: { status: "Running" | "Queued" | "Idle" }) {
+  const tone =
+    status === "Running"
+      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+      : status === "Queued"
+        ? "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
+        : "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400";
+  return <span className={`rounded px-2 py-0.5 text-[11px] font-medium ${tone}`}>{status}</span>;
+}
+
+// The scan-run-history surface (scan-run-history): what a scan actually did, read from the
+// recorded runs, so an idle queue after a fast scan still has a visible outcome. Degrades on its
+// own (independent of the live-queue section) when the read is unavailable.
+function ScanHistorySection({
+  scanHistory,
+  now,
+}: {
+  scanHistory: ScanHistorySnapshot;
+  now: number | null;
+}) {
   return (
-    <div className="mt-2 text-xs text-zinc-500">
-      <span>
-        worker {worker.state}
-        {running
-          ? ` - running ${worker.inFlight}${
-              worker.lastJobStartedOn ? ` since ${clock(worker.lastJobStartedOn)}` : ""
-            }`
-          : worker.lastJobStartedOn
-            ? ` - last run ${clock(worker.lastJobStartedOn)}${
-                worker.lastJobDurationMs != null ? ` (${worker.lastJobDurationMs} ms)` : ""
-              }`
-            : ""}
-      </span>
-      {worker.lastError ? (
-        <p className="mt-1 text-rose-600 dark:text-rose-400">
-          last error {clock(worker.lastErrorOn)}: {worker.lastError}
-        </p>
-      ) : null}
-    </div>
+    <section className="mt-8">
+      <h2 className="mb-3 text-sm font-semibold">Recent scans</h2>
+      {scanHistory.status === "unavailable" ? (
+        <p className="text-sm text-zinc-500">Scan history is unavailable right now.</p>
+      ) : scanHistory.runs.length === 0 ? (
+        <p className="text-sm text-zinc-500">No scans recorded yet.</p>
+      ) : (
+        <ul className="divide-y divide-zinc-100 rounded-lg border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+          {scanHistory.runs.map((run) => (
+            <ScanRow key={run.id} run={run} now={now} />
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 
-function CountBadge({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: number;
-  tone: "emerald" | "amber" | "zinc";
-}) {
-  const tones = {
-    emerald:
-      value > 0
-        ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
-        : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800",
-    amber:
-      value > 0
-        ? "bg-amber-100 text-amber-700 dark:bg-amber-500/15 dark:text-amber-300"
-        : "bg-zinc-100 text-zinc-400 dark:bg-zinc-800",
-    zinc: "bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400",
-  } as const;
+function ScanRow({ run, now }: { run: ScanRunView; now: number | null }) {
+  const failed = run.status === "failed";
   return (
-    <span className={`rounded px-1.5 py-0.5 text-[11px] ${tones[tone]}`}>
-      {value} {label}
-    </span>
+    <li className="flex items-start justify-between gap-3 px-4 py-2.5">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 text-sm">
+          <span
+            className={`inline-block h-2 w-2 shrink-0 rounded-full ${
+              run.status === "running"
+                ? "animate-pulse bg-emerald-500"
+                : failed
+                  ? "bg-rose-500"
+                  : "bg-zinc-300 dark:bg-zinc-600"
+            }`}
+            aria-hidden
+          />
+          <span className="truncate font-medium">{run.sourceLabel}</span>
+        </div>
+        <p
+          className={`mt-0.5 text-xs ${failed ? "text-rose-600 dark:text-rose-400" : "text-zinc-500"}`}
+        >
+          {run.summary}
+        </p>
+      </div>
+      <span className="shrink-0 text-xs text-zinc-400" title={clock(run.startedOn)}>
+        {ago(run.startedOn, now)}
+      </span>
+    </li>
   );
 }
 
