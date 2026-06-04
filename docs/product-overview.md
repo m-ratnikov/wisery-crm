@@ -96,7 +96,7 @@ it is wired.
 | D2 | Automate intelligence; the LinkedIn action stays human-assisted. | The old stack's failure and ban risk were entirely in the action layer. ToS-safe, GTM-aligned. |
 | D3 | Signals are the top of funnel, not CSV. | Crunchbase ($100/mo) is gone. Signal listening also fuels the comment-first motion. |
 | D4 | All scraping/enrichment behind one `SignalSource` / `EnrichmentProvider` interface. Self-host Puppeteer/Playwright for cheap/public sources, Apify for authenticated/deep. | A port of `job-monitor`'s `ScraperBase`. Per-source cost knob; Apify keeps detection risk off the user's own account. (ADR-0002) |
-| D5 | Qualifier = port of `job-monitor`'s static 1-5 ICP scorer (alert at >= 3, platform-aware, structured output, anti-hallucination). Qualify uses the cheap signal as the cost gate; the first-touch draft is a **separate** LLM call after deep enrichment, grounded in the dossier (per the pipeline order). Refined by ADR-0005: the score is recorded per person (a Scoring against the prospect), not on the shared signal. Refined by ADR-0007: the draft is from the signal by default and enrichment is optional/user-triggered (re-drafting from the dossier), not an automatic pre-draft stage. | Proven, cheap scorer, already written (M2). Splitting the draft out of job-monitor's bundled call is the one evolution. Ordering resolved at the C4 L2 review, 2026-05-24; enrichment made optional/user-triggered by ADR-0007 (2026-06-01). |
+| D5 | Qualifier = port of `job-monitor`'s static 1-5 ICP scorer (alert at >= 3, platform-aware, structured output, anti-hallucination). Qualify uses the cheap signal as the cost gate; the first-touch draft is a **separate** LLM call after deep enrichment, grounded in the dossier (per the pipeline order). Refined by ADR-0005: the score is recorded per person (a Scoring against the prospect), not on the shared signal (ADR-0005 now superseded by ADR-0010, which keeps the per-person score and fan-out and adds the manual origin). Refined by ADR-0007: the draft is from the signal by default and enrichment is optional/user-triggered (re-drafting from the dossier), not an automatic pre-draft stage. | Proven, cheap scorer, already written (M2). Splitting the draft out of job-monitor's bundled call is the one evolution. Ordering resolved at the C4 L2 review, 2026-05-24; enrichment made optional/user-triggered by ADR-0007 (2026-06-01); manual-origin prospects added by ADR-0010 (2026-06-04). |
 | D6 | The ICP rubric becomes config-as-data, not a hardcoded prompt. | Required for reuse by other CRM users and for the config UI. |
 | D7 | Log outcomes against scores from day one; outcome-driven tuning of the bar is a later additive milestone. | Lets the feedback loop become additive, not a migration. The learning loop is the "neo" differentiator. |
 | D8 | Entry point is configurable: multiple source types (LinkedIn search, CSV of companies, Google alerts, X posts, ...). | Already proven across 11 platforms in `job-monitor`. A new source is a new adapter, not a new pipeline. |
@@ -146,11 +146,14 @@ normalize + expand layer sits before the qualifier.
 
 Data-model consequence: a **signal / raw item is not a lead**. One company signal fans
 out to N person leads (one-to-many) - the fan-out invariant frozen in
-[ADR-0005](adr/0005-signal-to-prospect-fan-out.md). Model that from the start.
+[ADR-0005](adr/0005-signal-to-prospect-fan-out.md). A prospect may also originate **without a
+signal at all** - a lead the CRM user adds by hand - so `signal_id` is nullable and a prospect
+carries an `origin` ([ADR-0010](adr/0010-prospect-origin-signal-or-manual.md), superseding
+ADR-0005's signal_id-NOT-NULL totality while preserving the fan-out). Model both from the start.
 
 Canonical nouns: **Source** (configured origin, config-as-data), **Connector** (module that
 fetches and normalizes one source type), **RawItem** (normalized, un-deduped), **Signal**
-(deduped, persisted), **Prospect** (a person under evaluation, fanned out from a signal),
+(deduped, persisted), **Prospect** (a person under evaluation, fanned out from a signal or entered manually),
 **Scoring** (the per-person ICP rating). The connector boundary - how a source plugs in - is the
 single, pluggable interface of D4. The full data model (ERD, lifecycle, events) is promoted in
 [docs/architecture/domain-model.md](architecture/domain-model.md) and the ubiquitous language in
@@ -229,6 +232,8 @@ In:
 - Configurable signal sources (contract uniform from day one; adapters land
   incrementally; cheapest first adapters are the person-yielding ones - LinkedIn
   search and X - because they need no expand layer)
+- Manual lead entry (add a known person by hand, no signal; ADR-0010) - the prospect
+  carries an `origin` and flows through the same qualify gate as a discovered one
 - Normalize + expand layer (company -> people)
 - Qualifier (the ported 1-5 scorer)
 - Deep enrichment via Apify, optional and user-triggered by default with opt-in auto (ADR-0007)

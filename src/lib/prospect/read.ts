@@ -11,6 +11,7 @@ import { dossiers, drafts, prospects, scorings, signals, sources } from "@/lib/d
 export interface ProspectListItem {
   id: string;
   status: string;
+  origin: string;
   score: number | null;
   summary: string | null;
   sourceKind: string;
@@ -29,19 +30,37 @@ export function nameFromPayload(payload: unknown, fallback: string): string {
   return fallback;
 }
 
-// Base query: each prospect joined to its signal (payload + kind). Shared by the detail
-// read and the queue read; chain .where / .orderBy / .limit. (listProspects adds sources.)
+// Origin-agnostic display name (ADR-0010): a manual prospect's name lives in its column;
+// a discovered one's lives in its signal payload. One place the read-models branch on origin.
+export function displayName(row: {
+  origin: string;
+  manualName: string | null;
+  payload: unknown;
+  signalKind: string | null;
+}): string {
+  if (row.origin === "manual") {
+    return row.manualName && row.manualName.length > 0 ? row.manualName : "(unnamed lead)";
+  }
+  return nameFromPayload(row.payload, row.signalKind ?? "");
+}
+
+// Base query: each prospect LEFT-joined to its signal, so a manual prospect (no signal,
+// ADR-0010) is not dropped; signal payload/kind are null for it and identity comes from its
+// own columns via displayName(). Shared by the detail read and the queue read; chain
+// .where / .orderBy / .limit. (listProspects adds sources.)
 export function prospectsWithSignal() {
   return getDb()
     .select({
       id: prospects.id,
       status: prospects.status,
       createdAt: prospects.createdAt,
+      origin: prospects.origin,
+      manualName: prospects.name,
       payload: signals.payload,
       signalKind: signals.kind,
     })
     .from(prospects)
-    .innerJoin(signals, eq(signals.id, prospects.signalId));
+    .leftJoin(signals, eq(signals.id, prospects.signalId));
 }
 
 export async function listProspects(): Promise<ProspectListItem[]> {
@@ -52,13 +71,15 @@ export async function listProspects(): Promise<ProspectListItem[]> {
       id: prospects.id,
       status: prospects.status,
       createdAt: prospects.createdAt,
+      origin: prospects.origin,
+      manualName: prospects.name,
       signalKind: signals.kind,
       payload: signals.payload,
       sourceKind: sources.kind,
     })
     .from(prospects)
-    .innerJoin(signals, eq(signals.id, prospects.signalId))
-    .innerJoin(sources, eq(sources.id, signals.sourceId))
+    .leftJoin(signals, eq(signals.id, prospects.signalId))
+    .leftJoin(sources, eq(sources.id, signals.sourceId))
     .orderBy(desc(prospects.createdAt));
 
   // Latest scoring per prospect (newest first; first seen wins).
@@ -84,10 +105,12 @@ export async function listProspects(): Promise<ProspectListItem[]> {
   return base.map((r) => ({
     id: r.id,
     status: r.status,
+    origin: r.origin,
     score: latestScore.get(r.id)?.score ?? null,
     summary: latestScore.get(r.id)?.summary ?? null,
-    sourceKind: r.sourceKind,
-    name: nameFromPayload(r.payload, r.signalKind),
+    // A manual prospect has no source; label it so the UI has a chip (ADR-0010).
+    sourceKind: r.sourceKind ?? "manual",
+    name: displayName(r),
     enriched: enrichedIds.has(r.id),
     drafted: draftedIds.has(r.id),
     createdAt: r.createdAt,
@@ -131,7 +154,7 @@ export async function getProspectDetail(prospectId: string): Promise<ProspectDet
   return {
     id: p.id,
     status: p.status,
-    name: nameFromPayload(p.payload, p.signalKind),
+    name: displayName(p),
     score: sc?.score ?? null,
     reason: sc?.reason ?? null,
     summary: sc?.summary ?? null,

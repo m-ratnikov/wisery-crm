@@ -57,6 +57,20 @@
       "when": 1780386503591,
       "tag": "0007_nappy_psylocke",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1780511651892,
+      "tag": "0008_purple_power_man",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1780512669227,
+      "tag": "0009_graceful_spacker_dave",
+      "breakpoints": true
     }
   ]
 }

@@ -7,6 +7,8 @@ ubiquitous nouns are in [glossary.md](glossary.md); the component view is in
 
 Promoted from change `c4-level3-and-domain-model` (2026-05-26). Governing decisions:
 [ADR-0005](../adr/0005-signal-to-prospect-fan-out.md) (signal -> N prospect fan-out, refines D5),
+[ADR-0010](../adr/0010-prospect-origin-signal-or-manual.md) (a prospect originates from a signal or
+is entered manually; supersedes ADR-0005's signal_id-NOT-NULL totality, fan-out preserved),
 [product-overview.md](../product-overview.md) section 4 (pipeline, locked decisions D1-D10).
 
 ## Entity model
@@ -23,7 +25,7 @@ erDiagram
     SOURCE ||--o{ SCAN : "runs"
     SOURCE ||--o{ SIGNAL : "yields"
     SCAN ||--o{ SIGNAL : "produces"
-    SIGNAL ||--o{ PROSPECT : "fans out to"
+    SIGNAL |o--o{ PROSPECT : "fans out to (signal origin; absent for manual)"
     PROSPECT ||--o{ SCORING : "scored by"
     RUBRIC ||--o{ SCORING : "scored against"
     PROSPECT ||--o| DOSSIER : "enriched into"
@@ -57,14 +59,19 @@ erDiagram
         uuid id PK
         uuid source_id FK
         uuid scan_id FK
-        enum kind "person, company, content"
+        enum kind "person, company, content, job"
         text dedup_key "unique per source"
         jsonb payload "normalized at the edge"
         timestamptz created_at
     }
     PROSPECT {
         uuid id PK
-        uuid signal_id FK
+        text origin "Zod-validated: signal | manual (default signal) (ADR-0010)"
+        uuid signal_id FK "set iff origin = signal; NULL iff origin = manual"
+        text name "manual identity; NULL when origin = signal"
+        text headline "manual identity; NULL when origin = signal"
+        text company "manual identity; NULL when origin = signal"
+        text linkedin_url "manual identity; NULL when origin = signal"
         text status "Zod-validated disposition: new, below_bar, qualified, queued, acted, dismissed, closed (ADR-0008). enriched/drafted are NOT statuses - derived from the DOSSIER/DRAFT relations"
         timestamptz created_at
         timestamptz updated_at
@@ -131,7 +138,7 @@ erDiagram
 
 Per non-obvious cardinality:
 
-- **SIGNAL ||--o{ PROSPECT (the load-bearing fan-out).** A signal is not a prospect. A person source yields one prospect per signal; a company or content source expands one signal into many person prospects via normalize-expand. One-to-many from day one keeps the company/content path from being a later migration ([ADR-0005](../adr/0005-signal-to-prospect-fan-out.md)).
+- **SIGNAL |o--o{ PROSPECT (the load-bearing fan-out; a prospect has at most one signal).** A signal is not a prospect. A person source yields one prospect per signal; a company or content source expands one signal into many person prospects via normalize-expand. One-to-many from day one keeps the company/content path from being a later migration ([ADR-0005](../adr/0005-signal-to-prospect-fan-out.md)). A prospect references **at most one** signal: exactly one when `origin = signal`, none when `origin = manual` (a hand-entered lead) - so `signal_id` is nullable ([ADR-0010](../adr/0010-prospect-origin-signal-or-manual.md), superseding ADR-0005's `signal_id NOT NULL` totality while preserving the fan-out cardinality). A per-origin CHECK keeps "signal-derived but missing its signal" unrepresentable: `(origin <> 'signal' OR signal_id IS NOT NULL) AND (origin <> 'manual' OR (signal_id IS NULL AND name IS NOT NULL))`. A manual prospect's person identity lives in its own columns (`name`, `headline`, `company`, `linkedin_url`); a signal-derived prospect's identity stays in `signals.payload`, and both are read through one `PersonIdentity` seam so consumers do not branch on origin.
 - **PROSPECT ||--o{ SCORING and RUBRIC ||--o{ SCORING.** The score is its own entity, not columns on Prospect, so a prospect can be re-scored (when the rubric is tuned) without overwriting the prior score and the rubric version it was taken against. Each scoring binds to its rubric version (`rubric_id` + `prompt_version`/`model`). In MVP a prospect is scored once; the entity makes re-scoring additive rows rather than a future migration. The prospect's pipeline status is gated by its latest Scoring against the active rubric, so a re-score moves the gate deterministically.
 - **PROSPECT ||--o| DOSSIER (zero-or-one).** Enrichment is optional and user-triggered by default (with an opt-in auto-enrich setting), not an automatic score gate ([ADR-0007](../adr/0007-user-triggered-optional-enrichment.md)), so a prospect may have no dossier; one when present. A qualified prospect is drafted from the signal by default; enrichment is a user/auto-triggered side-transition that then re-drafts from the dossier.
 - **PROSPECT ||--o{ DRAFT.** Drafts are regenerable, so a prospect can accumulate several; one is `selected` for the human to send.
@@ -140,7 +147,7 @@ Per non-obvious cardinality:
 
 The status/result vocabularies (`Prospect.status`, `Draft.status`, `Outcome.result`), the nullable `Outcome.draft_id`, and the versioning fields are deliberate modeling choices: closed pg enums are extensible by an additive `ALTER TYPE ADD VALUE` (applied in isolation, never ADD-then-USE in one migration), and `Prospect.status` is text+Zod because a lifecycle state machine is the most churn-prone set. A **Rubric** row is immutable once any Scoring references it: tuning the ICP creates a new version row, so a past score's rubric is never rewritten - the invariant the learning loop depends on.
 
-Not modeled yet: a `tenant` entity (`tenant_id` is the additive productization hook on the config-as-data entities); cross-source identity resolution across prospects (dedup is per-source by design); and the company-to-people expansion record (firmographic pre-check verdict and expanded roles), owned by the normalize-expand capability (M2).
+Not modeled yet: a `tenant` entity (`tenant_id` is the additive productization hook on the config-as-data entities); cross-source and cross-origin identity resolution across prospects (dedup is per-source by design, and a manual lead may duplicate a signal-derived one - ADR-0010); and the company-to-people expansion record (firmographic pre-check verdict and expanded roles), owned by the normalize-expand capability (M2).
 
 ## Lifecycle
 
@@ -156,7 +163,8 @@ relations, not a status** - those facts are orthogonal to disposition, can co-oc
 
 ```mermaid
 stateDiagram-v2
-    [*] --> New : signal fans out to a person
+    [*] --> New : signal fans out to a person (origin = signal)
+    [*] --> New : CRM user adds a lead by hand (origin = manual, no signal)
     New --> BelowBar : score < 3 or score = -1 (insufficient data)
     New --> Qualified : score >= 3
     Qualified --> Queued : a first-touch draft exists; enters the review queue
@@ -185,8 +193,9 @@ The events that drive the system; doubles as the background-job-stage map.
 | ScanRequested | `enqueueScan(sourceId)` or the deferred cron | one `source-scan` job enqueued | scan (signal-ingestion) |
 | ScanCompleted | `runScan` finishes | `Scan` -> completed with fetched/persisted/dropped counts | scan |
 | ScanFailed | a connector raises mid-run | `Scan` -> failed with error, other sources unaffected | scan |
-| SignalPersisted | dedup miss on `(source_id, dedup_key)` | new immutable `Signal` row | scan |
-| ProspectScored | qualify job runs the rubric over a signal-derived person | a `Scoring` row (score, reason, rubric version); `Prospect` -> `qualified` or `below_bar` directly per the gate - no intermediate `scored` status (ADR-0008) | qualify (qualification) |
+| SignalPersisted | dedup miss on `(source_id, dedup_key)` | new immutable `Signal` row; the persisted-signal handoff routes by kind - a `person` enqueues qualify, a non-person (`company`/`content`/`job`) is persisted without a handoff and awaits normalize-expand (linkedin-jobs-source) | scan |
+| ProspectAddedManually | CRM user submits the add-lead form on the prospect list | a `Prospect` with `origin = manual`, `signal_id` null, identity columns set, status `new`; qualify enqueued by `prospectId` (user-triggered, fire-and-forget per ADR-0009's carve-out) (ADR-0010) | prospect-list add action -> qualify (prospect-keyed) |
+| ProspectScored | qualify job runs the rubric over the prospect's person identity (read through the `PersonIdentity` seam regardless of origin; ADR-0010) | a `Scoring` row (score, reason, rubric version); `Prospect` -> `qualified` or `below_bar` directly per the gate - no intermediate `scored` status (ADR-0008) | qualify (qualification) |
 | ProspectQualified | latest Scoring against the active rubric is >= 3 | `Prospect` -> qualified, enqueue draft (default); enqueue enrich only if the user triggered it or auto-enrich is on (ADR-0007) | qualify (qualification) |
 | ProspectEnriched | enrich job, user- or auto-triggered, provider available | `Dossier` created (enriched is derived from this relation, ADR-0008), re-draft enqueued; **no status change** | enrich (enrichment) |
 | DraftGenerated | draft job, from the signal (default) or re-drafted from a dossier after enrichment | `Draft` row created (drafted is derived from this relation, ADR-0008); prospect moves to `queued` when a draft first exists | draft (drafting) |

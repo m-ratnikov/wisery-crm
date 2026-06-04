@@ -18,7 +18,7 @@ export async function enqueueScan(sourceId: string): Promise<string | null> {
 // transaction, so the signal and its qualify job commit atomically (ADR-0009, qualification
 // D-G); a dedup duplicate inserts nothing and hands off nothing.
 export interface ScanWorkerOptions {
-  enqueueNext?: (tx: DbTx, signalId: string) => Promise<void>;
+  enqueueNext?: (tx: DbTx, signalId: string, kind: string) => Promise<void>;
 }
 
 export async function registerScanWorker(options: ScanWorkerOptions = {}): Promise<void> {

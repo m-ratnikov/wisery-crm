@@ -1,19 +1,29 @@
 import "server-only";
-import { PgBoss, fromDrizzle, type Job, type SendOptions } from "pg-boss";
+import { PgBoss, fromDrizzle, type Job, type JobWithMetadata, type SendOptions } from "pg-boss";
 import { sql } from "drizzle-orm";
 import { getConfig } from "@/lib/config/env";
 import type { DbTx } from "@/lib/db";
 import { logger } from "@/lib/log";
+import { assembleActivity, assembleSchedules, unavailable } from "@/lib/jobs/activity-map";
+import type { JobActivitySnapshot, ScheduleSnapshot } from "@/lib/jobs/activity";
 
 // pg-boss reached through a thin facade (ADR-0004): one localized call site, not
 // a portability seam. It holds its OWN pool/connection, separate from the app's
 // Drizzle pool (ADR-0001).
 const HEARTBEAT_QUEUE = "heartbeat";
 
-let boss: PgBoss | undefined;
+// Pin the singleton to globalThis. instrumentation.ts (which calls start() and
+// registers the workers) and Server Actions / route handlers can resolve to
+// SEPARATE instances of this module under Next + Turbopack; a plain module-level
+// `let` would give the action an unstarted, worker-less boss ("Database not
+// opened"). globalThis is shared across those module contexts and survives HMR,
+// so every caller reaches the one started instance that owns the workers.
+const BOSS_KEY = Symbol.for("wisery.pgboss");
+type BossGlobal = typeof globalThis & { [BOSS_KEY]?: PgBoss };
+const bossGlobal = globalThis as BossGlobal;
 
 export function getBoss(): PgBoss {
-  if (!boss) {
+  if (!bossGlobal[BOSS_KEY]) {
     const cfg = getConfig();
     const instance = new PgBoss({
       connectionString: cfg.pgbossDatabaseUrl,
@@ -21,9 +31,9 @@ export function getBoss(): PgBoss {
       application_name: "pgboss",
     });
     instance.on("error", (err) => logger.error({ err }, "pg-boss error"));
-    boss = instance;
+    bossGlobal[BOSS_KEY] = instance;
   }
-  return boss;
+  return bossGlobal[BOSS_KEY];
 }
 
 export async function enqueue<T extends object>(
@@ -56,6 +66,51 @@ export async function work<T>(
   return getBoss().work<T>(queue, handler);
 }
 
+// Read-only job-activity introspection (job-activity-monitor). Thin pg-boss I/O only; the pure
+// raw -> DTO mapping lives in ./activity (the testable half). Composed from cheap sources only -
+// never an unfiltered findJobs (no SQL LIMIT; it would page the once-a-minute heartbeat queue's
+// retained completed-job history):
+//   - getQueues(): per-queue counts (one aggregated query)
+//   - getWipData(): an IN-MEMORY snapshot of this process's workers (no SQL) for what each queue
+//     is running now and its last error - populated only because the boss is a globalThis
+//     singleton shared with the bootstrap that registered the workers
+//   - findJobs(name, { queued: true }): the individual WAITING jobs (SQL filters state < active,
+//     i.e. created + retry), bounded by real backlog, never the completed history
+export async function listJobActivity(): Promise<JobActivitySnapshot> {
+  let queues, wip, waitingByQueue;
+  try {
+    const boss = getBoss();
+    queues = await boss.getQueues();
+    // getWipData is a single synchronous in-memory snapshot taken before any await, so it is
+    // internally consistent (not torn across the per-queue awaits below). The snapshot and the
+    // findJobs rows are deliberately point-in-time-independent - polling tolerates that skew; do
+    // NOT wrap this in a transaction (that would couple the read to the app's connection budget,
+    // the exact web/worker seam ADR-0001 keeps separate).
+    wip = boss.getWipData({ includeInternal: true });
+    waitingByQueue = new Map<string, JobWithMetadata[]>();
+    for (const q of queues) {
+      waitingByQueue.set(q.name, await boss.findJobs(q.name, { queued: true }));
+    }
+  } catch (err) {
+    // Only the pg-boss I/O is guarded: an unstarted runtime (DB not opened) degrades to a
+    // structured unavailable result, logged so a real fault stays observable. The pure mapping
+    // below runs OUTSIDE this catch so a mapper bug surfaces as a real error, never masquerades
+    // as "runtime not running".
+    logger.warn({ err }, "job activity unavailable (runtime not started?)");
+    return unavailable(err);
+  }
+  return assembleActivity(queues, wip, waitingByQueue);
+}
+
+export async function listSchedules(): Promise<ScheduleSnapshot> {
+  try {
+    return assembleSchedules(await getBoss().getSchedules());
+  } catch (err) {
+    logger.warn({ err }, "schedules unavailable (runtime not started?)");
+    return unavailable(err);
+  }
+}
+
 export async function startJobs(): Promise<void> {
   const b = getBoss();
   await b.start(); // creates the pgboss schema, starts the poller, cron, maintenance
@@ -69,8 +124,9 @@ export async function startJobs(): Promise<void> {
 }
 
 export async function stopJobs(): Promise<void> {
+  const boss = bossGlobal[BOSS_KEY];
   if (boss) {
     await boss.stop({ graceful: true });
-    boss = undefined;
+    bossGlobal[BOSS_KEY] = undefined;
   }
 }

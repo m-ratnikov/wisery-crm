@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { UserProfileData } from "@/lib/icp/schema";
 import { getLLM } from "@/lib/llm";
 import type { LLMProvider } from "@/lib/llm/provider";
-import type { SignalRow } from "@/lib/signals/connector";
+import type { PersonSubject } from "@/lib/prospect/identity";
 import { draftPromptV1 } from "@/prompts/draft_v1";
 
 // Generates the first-touch message from the user profile + the signal through the
@@ -26,7 +26,7 @@ const DRAFT_MODEL = "claude-opus-4-8";
 const DRAFT_MAX_TOKENS = 1024;
 
 export async function draftMessage(
-  signal: SignalRow,
+  subject: PersonSubject,
   profile: UserProfileData,
   opts: { llm?: LLMProvider; dossier?: unknown } = {},
 ): Promise<DraftedMessage> {
@@ -42,8 +42,8 @@ export async function draftMessage(
     `Case studies: ${profile.caseStudies.map((c) => `${c.title} - ${c.result}`).join("; ")}`,
     "",
     "## Prospect signal",
-    `kind: ${signal.kind}`,
-    JSON.stringify(signal.payload, null, 2),
+    `kind: ${subject.kind}`,
+    JSON.stringify(subject.payload, null, 2),
   ];
   // When the prospect has been enriched, ground the draft in the richer dossier (ADR-0007).
   if (opts.dossier !== undefined && opts.dossier !== null) {

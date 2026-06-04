@@ -28,6 +28,7 @@ screens. This table is the source of truth for those many-to-many relationships.
 | ICP & source config | `/prototype/icp-config` | graduated | "ICP and source config", anchor #1 - **wired live at `/icp-config`** (Server Component + Server Actions over `src/lib/icp`); this prototype screen stays the design reference | icp-config (rubric + profile, config-as-data), source-adapters (source config), signal-ingestion (scan status) | [anchor-view wireframes](../../../docs/explore/2026-05-26-anchor-view-wireframes.md) |
 | Whole-app shell | `/prototype` | sketch | integration flow -> [Primary journey](../../../docs/product-overview.md#primary-journey) | all anchor views (funnel + deep links) + live pipeline activity | [anchor-view wireframes](../../../docs/explore/2026-05-26-anchor-view-wireframes.md) |
 | Settings | `/prototype/settings` | sketch | plumbing (not an anchor) | account; source-adapters (connected scrapers, read-only in MVP, V2-expandable) | - |
+| Background jobs monitor | `/jobs` | wired (built directly, no prototype) | Operations view (not an anchor) - read-only observability of the in-process pg-boss pipeline | job-activity-monitor, background-jobs (activity introspection), app-shell (operations nav) | - |
 | Sign in | `/prototype/sign-in` | sketch | plumbing (not an anchor) | auth (email/password; Google SSO is V2) | - |
 | Sign up | `/prototype/sign-up` | sketch | plumbing (not an anchor) | auth (email/password; Google SSO is V2) | - |
 
@@ -37,6 +38,11 @@ screens. This table is the source of truth for those many-to-many relationships.
 views (ICP config, prospect list, review queue). Settings and auth are standard plumbing UI -
 real, hand-built screens, but not anchor views and not generative. They are listed here because
 they are part of the clickable app.
+
+**Operations views skip the prototype.** A read-only observability surface (the jobs monitor)
+has low layout ambiguity and no high-judgment action, so it is built directly as a wired screen
+without a prototype mockup. It is still registered here so the capability spec -> screen link
+resolves; it is neither an anchor view nor generative.
 
 **Routing.** The signed-in app screens live under the `(app)/` route group (its `layout.tsx`
 owns the sidebar chrome; `_data/` and `_components/` live there too). The auth screens

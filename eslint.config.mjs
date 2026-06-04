@@ -44,6 +44,29 @@ export default defineConfig([
     extends: [tseslint.configs.disableTypeChecked],
   },
 
+  // System-review FF-1 (2026-06-04): app-layer code uses the prospect-keyed, fire-and-forget
+  // enqueueQualifyProspect; enqueueQualifyInTx is the in-transaction pipeline handoff wired only
+  // at the composition root. Block the in-tx variant from src/app so a future caller cannot reach
+  // the wrong (signal-keyed, transactional) enqueue by name.
+  {
+    files: ["src/app/**/*.{ts,tsx}"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@/lib/qualify/qualify-queue",
+              importNames: ["enqueueQualifyInTx"],
+              message:
+                "Use enqueueQualifyProspect from app code; enqueueQualifyInTx is the in-transaction pipeline handoff (composition root only).",
+            },
+          ],
+        },
+      ],
+    },
+  },
+
   prettier,
 
   globalIgnores([".next/**", "out/**", "build/**", "coverage/**", "drizzle/**", "next-env.d.ts"]),

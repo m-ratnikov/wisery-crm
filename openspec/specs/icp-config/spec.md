@@ -9,7 +9,6 @@ The ICP rubric the qualifier scores against and the user profile the drafter wri
 - Journey + decisions: [product-overview.md](../../../docs/product-overview.md) journey step 1 and the qualifier (section 5); D6 (rubric as config-as-data), D1 (config-as-data the one kept multi-tenant discipline; auth deferred).
 - Data model: `Rubric` and `USER_PROFILE` in [domain-model.md](../../../docs/architecture/domain-model.md), including the "a Rubric is immutable once any Scoring references it" invariant realized here as additive versioning.
 - Surfaced by the wired anchor view at `src/app/icp-config/` (Server Component + Server Actions over `src/lib/icp`); the design reference is the prototype screen in the [prototype registry](../../../src/app/prototype/README.md). Reuses `signal-ingestion`'s sources + `enqueueScan`.
-
 ## Requirements
 ### Requirement: The ICP rubric and user profile persist as config-as-data
 
@@ -66,7 +65,7 @@ The system SHALL provide an initial active rubric and profile so the pipeline ca
 
 ### Requirement: The user configures the engine from the config screen
 
-The system SHALL present a config screen where a user views and edits the active rubric and the profile, and views, enables or disables, and triggers a scan of their signal sources. Saving an edit SHALL persist it through the config-as-data layer and the updated configuration SHALL be reflected on the screen.
+The system SHALL present a config screen where a user views and edits the active rubric and the profile, and manages their signal sources - connecting a new source through the guided per-kind wizard, editing a connected source's settings, enabling or disabling it, and triggering a scan. Saving an edit SHALL persist it through the config-as-data layer and the updated configuration SHALL be reflected on the screen.
 
 #### Scenario: Editing the rubric from the screen persists it
 
@@ -77,4 +76,14 @@ The system SHALL present a config screen where a user views and edits the active
 
 - **WHEN** a user triggers a scan of an enabled source from the config screen
 - **THEN** a scan is enqueued for that source
+
+#### Scenario: Connecting a source from the screen
+
+- **WHEN** a user connects a new source from the config screen through the guided wizard
+- **THEN** the source is created with its kind's settings and appears in the source list, ready to scan
+
+#### Scenario: Editing a connected source's settings from the screen
+
+- **WHEN** a user edits a connected source's settings on the config screen and saves a valid configuration
+- **THEN** the configuration is updated in place and the screen reflects it
 

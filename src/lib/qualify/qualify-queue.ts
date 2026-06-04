@@ -1,12 +1,15 @@
 import "server-only";
-import { enqueueInTx, getBoss, work } from "@/lib/jobs";
+import { enqueue, enqueueInTx, getBoss, work } from "@/lib/jobs";
 import type { DbTx } from "@/lib/db";
-import { qualifySignal } from "@/lib/qualify/pipeline";
+import { qualifyProspect, qualifySignal } from "@/lib/qualify/pipeline";
 
 // One qualify job per signal, over the generic jobs facade (mirrors the scan worker). The
 // enqueue-on-persist wiring lives at the composition root (bootstrap), so signal-ingestion
 // never imports this module - dependency direction stays qualify -> signals (D-G).
 const QUALIFY_QUEUE = "qualify";
+// The prospect-keyed entry (manual leads, ADR-0010, and re-qualify): qualify an existing
+// prospect by id rather than creating one from a signal.
+const QUALIFY_PROSPECT_QUEUE = "qualify-prospect";
 
 // Enqueue qualification for a signal ON the caller's transaction - the scan's signal-insert
 // transaction - so a newly persisted signal and its qualify job commit atomically (ADR-0009).
@@ -15,6 +18,15 @@ const QUALIFY_QUEUE = "qualify";
 // enqueue yields one prospect and one LLM call - without a DB unique on signal_id (ADR-0005).
 export async function enqueueQualifyInTx(tx: DbTx, signalId: string): Promise<string | null> {
   return enqueueInTx(tx, QUALIFY_QUEUE, { signalId }, { singletonKey: signalId });
+}
+
+// Fire-and-forget enqueue of qualification for an existing prospect (a manual add, or a
+// re-qualify). User-triggered, so per ADR-0009's carve-out it uses the plain facade `enqueue`
+// (not in-transaction): failure surfaces to the user, who can re-trigger. The `singleton`
+// policy + singletonKey keep at most one active qualify job per prospect; combined with the
+// scored-already guard in qualifyProspect, a duplicate enqueue yields one score, one LLM call.
+export async function enqueueQualifyProspect(prospectId: string): Promise<string | null> {
+  return enqueue(QUALIFY_PROSPECT_QUEUE, { prospectId }, { singletonKey: prospectId });
 }
 
 // The downstream handoff (enqueue drafting for qualified prospects, + enrichment when auto) is
@@ -37,6 +49,21 @@ export async function registerQualifyWorker(options: QualifyWorkerOptions = {}):
     for (const job of jobs) {
       const enqueueNext = options.resolveHandoff ? await options.resolveHandoff() : undefined;
       await qualifySignal(job.data.signalId, { enqueueNext });
+    }
+  });
+}
+
+// The prospect-keyed qualify worker (manual leads / re-qualify). Same handoff as the
+// signal-keyed worker (draft, + enrich when auto), so a qualified manual prospect reaches
+// the queue identically.
+export async function registerQualifyProspectWorker(
+  options: QualifyWorkerOptions = {},
+): Promise<void> {
+  await getBoss().createQueue(QUALIFY_PROSPECT_QUEUE, { policy: "singleton" });
+  await work<{ prospectId: string }>(QUALIFY_PROSPECT_QUEUE, async (jobs) => {
+    for (const job of jobs) {
+      const enqueueNext = options.resolveHandoff ? await options.resolveHandoff() : undefined;
+      await qualifyProspect(job.data.prospectId, { enqueueNext });
     }
   });
 }

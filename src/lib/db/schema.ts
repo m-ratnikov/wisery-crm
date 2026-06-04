@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   boolean,
+  check,
   index,
   integer,
   jsonb,
@@ -32,7 +33,11 @@ const timestamps = () => ({
 
 // Closed domain vocabularies -> pg enums (D-F). Growth is an additive ALTER TYPE.
 export const scanStatus = pgEnum("scan_status", ["running", "completed", "failed"]);
-export const signalKind = pgEnum("signal_kind", ["person", "company", "content"]);
+// person | company | content | job. Grows by an additive ALTER TYPE ADD VALUE applied in
+// isolation (never ADD-then-USE in one migration). A non-person kind is persisted but routed
+// past qualify (which scores a person) until normalize-expand lands - the routing is at the
+// composition root, by kind (linkedin-jobs-source).
+export const signalKind = pgEnum("signal_kind", ["person", "company", "content", "job"]);
 // A draft's state among a prospect's drafts: one `selected` candidate, prior ones
 // `archived` (drafts are regenerable, ADR-0007). Closed, low-churn -> a pg enum.
 export const draftStatus = pgEnum("draft_status", ["generated", "selected", "archived"]);
@@ -147,19 +152,36 @@ export const userProfile = pgTable("user_profile", {
 // most churn-prone set). A Scoring is the per-person ICP rating against a rubric version -
 // additive, so re-scoring is new rows and the learning loop binds outcomes to the exact
 // score and rubric a prospect was acted on (D5, D7).
+// A Prospect originates from a signal (discovered, the fan-out path) or is entered manually
+// by the CRM user (ADR-0010). `origin` is text+Zod (the churn-prone-set policy, beside
+// `status`), defaulting to `signal` so the migration is additive. `signal_id` is nullable:
+// set iff origin = signal, NULL iff origin = manual. A manual prospect's person identity lives
+// in its own columns (name/headline/company/linkedin_url); a signal-derived one reads identity
+// from signals.payload, both via the PersonSubject seam (src/lib/prospect/identity). The
+// per-origin CHECK makes "signal-derived but missing its signal" unrepresentable and admits a
+// future origin without tripping (ADR-0010).
 export const prospects = pgTable(
   "prospects",
   {
     id: uuid("id")
       .primaryKey()
       .default(sql`gen_random_uuid()`),
-    signalId: uuid("signal_id")
-      .notNull()
-      .references(() => signals.id, { onDelete: "restrict" }),
+    origin: text("origin").notNull().default("signal"),
+    signalId: uuid("signal_id").references(() => signals.id, { onDelete: "restrict" }),
+    name: text("name"),
+    headline: text("headline"),
+    company: text("company"),
+    linkedinUrl: text("linkedin_url"),
     status: text("status").notNull(),
     ...timestamps(),
   },
-  (t) => [index("prospects_signal_idx").on(t.signalId)],
+  (t) => [
+    index("prospects_signal_idx").on(t.signalId),
+    check(
+      "prospects_origin_chk",
+      sql`(${t.origin} <> 'signal' OR ${t.signalId} IS NOT NULL) AND (${t.origin} <> 'manual' OR (${t.signalId} IS NULL AND ${t.name} IS NOT NULL))`,
+    ),
+  ],
 );
 
 export const scorings = pgTable(

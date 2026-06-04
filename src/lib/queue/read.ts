@@ -2,7 +2,7 @@ import "server-only";
 import { desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { dossiers, drafts, prospects, scorings } from "@/lib/db/schema";
-import { nameFromPayload, prospectsWithSignal } from "@/lib/prospect/read";
+import { displayName, prospectsWithSignal } from "@/lib/prospect/read";
 
 // The review-queue read-model (review-queue D-B): the open worklist - prospects that are
 // `queued` (review + act) or `acted` (awaiting an outcome log) - with everything a card
@@ -51,7 +51,7 @@ export async function listQueue(): Promise<QueueItem[]> {
   return base.map((r) => ({
     id: r.id,
     status: r.status,
-    name: nameFromPayload(r.payload, r.signalKind),
+    name: displayName(r),
     score: latestScore.get(r.id)?.score ?? null,
     reason: latestScore.get(r.id)?.reason ?? null,
     draft: draftBody.get(r.id) ?? null,

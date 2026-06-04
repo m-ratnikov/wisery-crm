@@ -9,7 +9,6 @@ Anchor view #3: the browse/manage grid over every prospect across the pipeline -
 - Decisions: the minimal-interface thesis (anchor view #3), [ADR-0008](../../../docs/adr/0008-prospect-status-is-disposition.md) (enriched/drafted derived from the DOSSIER/DRAFT relations, not statuses), [ADR-0007](../../../docs/adr/0007-user-triggered-optional-enrichment.md) (enrich trigger + auto-enrich), D1 (auth deferred). Journey: working from the prospect list, [product-overview.md](../../../docs/product-overview.md).
 - Reads `prospects` / `scorings` / `drafts` / `dossiers` / `signals` / `sources` via the `src/lib/prospect` read-model (`listProspects` / `getProspectDetail`); acts through `src/lib/enrich` (`enqueueEnrich`/`enqueueEnrichForProspects`, `setAutoEnrich`) and `src/lib/draft` (`enqueueDraft` forced re-draft).
 - Surfaced at the wired route `src/app/prospect-list/` (grid + `[id]` detail + Server Actions); the prototype screen is the design reference - see the [prototype registry](../../../src/app/prototype/README.md).
-
 ## Requirements
 ### Requirement: The prospect list shows every prospect with its pipeline state
 
@@ -47,4 +46,27 @@ The system SHALL let a user turn the auto-enrich setting on or off from the pros
 
 - **WHEN** a user turns auto-enrich on (or off)
 - **THEN** the setting is persisted and governs subsequent qualification routing
+
+### Requirement: Manual-origin prospects appear alongside discovered ones
+
+The system SHALL show a manual-origin prospect in the prospect list - and, once it is queued, in the review queue - with the same identity, score, and status fields as a discovered prospect, so the CRM user works one list regardless of origin. Including manual prospects SHALL NOT drop or alter how discovered prospects appear.
+
+#### Scenario: A manual prospect appears in the list
+
+- **WHEN** a manual prospect exists
+- **THEN** it appears in the prospect list with its entered identity and, once scored, its score and status
+
+#### Scenario: Discovered prospects are unaffected
+
+- **WHEN** the prospect list is shown with both discovered and manual prospects
+- **THEN** each discovered prospect appears exactly as before, and manual prospects appear alongside them
+
+### Requirement: The prospect list offers add-lead and re-qualify affordances
+
+The system SHALL present, on the prospect list, an affordance to add a lead by hand and - for a manual prospect still unscored - an affordance to re-qualify it.
+
+#### Scenario: Add-lead affordance is present
+
+- **WHEN** the CRM user views the prospect list
+- **THEN** an add-lead affordance is available that opens the manual-entry form
 

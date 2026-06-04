@@ -47,6 +47,29 @@ module.exports = {
       to: { path: "^src/lib/signals/connectors/" },
     },
     {
+      // System-review FF-2 (2026-06-04): the port-side source-kind catalog (source-kinds.ts)
+      // depends on the registry; a connector importing the catalog would invert the seam and
+      // risk an adapter -> catalog -> registry -> adapter cycle that `verify` stays green on.
+      // Per-kind config schemas shared by both live in the leaf source-kind-schemas.ts.
+      name: "connectors-not-to-catalog",
+      severity: "error",
+      comment:
+        "Connector adapters (src/lib/signals/connectors/) must not import the source-kind catalog (source-kinds.ts). Shared per-kind config schemas live in source-kind-schemas.ts, a leaf with no upward dependency.",
+      from: { path: "^src/lib/signals/connectors/" },
+      to: { path: "^src/lib/signals/source-kinds\\.ts$" },
+    },
+    {
+      // System-review FF-4 (2026-06-04): a domain pipeline core must not reach the jobs facade.
+      // Stage-to-stage handoff is injected at the composition root (bootstrap), so a core stays
+      // role-agnostic and db-only (ADR-0001 peel-safety). Honored by convention before this rule.
+      name: "pipeline-not-to-jobs",
+      severity: "error",
+      comment:
+        "Domain pipeline cores (*/pipeline.ts) must not import the jobs facade (@/lib/jobs). The next-stage enqueue is injected at the composition root; a core depends on db only.",
+      from: { path: "^src/lib/[^/]+/pipeline\\.ts$" },
+      to: { path: "^src/lib/jobs(/|$)" },
+    },
+    {
       name: "llm-port-not-to-adapters",
       severity: "error",
       comment:

@@ -42,7 +42,11 @@ export default defineConfig({
         // queue/worker wrapper over it whose only logic is calling the fully-tested
         // runScan core. Both are exercised by the live boot, not by dev-schema-touching
         // or performative tests; the scan pipeline itself is covered by integration.
-        "src/lib/jobs/**",
+        // index.ts stays excluded as I/O delegation; its pure raw->DTO mapping half
+        // (activity-map.ts) is coverage-included and unit-tested - same split as the LinkedIn
+        // connector (normalizeJob included, the network client excluded). activity.ts is
+        // types-only (no executable lines).
+        "src/lib/jobs/index.ts",
         "src/lib/signals/scan-queue.ts",
         "src/lib/qualify/qualify-queue.ts",
         "src/lib/draft/draft-queue.ts",
@@ -52,6 +56,10 @@ export default defineConfig({
         // pipeline are unit/integration-covered.
         "src/lib/llm/anthropic.ts",
         "src/lib/enrich/apify.ts",
+        // The LinkedIn jobs network fetch + connector scan (needs real endpoint access,
+        // exercised by a live smoke). Its pure mapping (normalizeJob) + config schema live in
+        // linkedin-jobs.ts and stay coverage-included and unit-tested (linkedin-jobs-source).
+        "src/lib/signals/connectors/linkedin-jobs-client.ts",
       ],
       thresholds: {
         // Per-file so a new untested module cannot hide behind global coverage.

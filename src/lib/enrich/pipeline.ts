@@ -31,10 +31,10 @@ export async function enrichProspect(
   if (!loaded) {
     return { prospectId, enriched: false, skipped: true };
   }
-  const { signal } = loaded;
+  const { subject } = loaded;
 
   const provider = opts.provider ?? getEnrichmentProvider();
-  const result = await provider.enrich(signal);
+  const result = await provider.enrich(subject);
 
   // Upsert the single dossier (one per prospect): re-enrich updates it, never duplicates.
   // The re-draft handoff commits with the dossier or not at all.

@@ -1,11 +1,16 @@
 import "server-only";
+import type { DbTx } from "@/lib/db";
 import { getConfig } from "@/lib/config/env";
 import { startJobs, stopJobs } from "@/lib/jobs";
 import { logger } from "@/lib/log";
 import { enqueueDraftInTx, registerDraftWorker } from "@/lib/draft/draft-queue";
 import { enqueueEnrichInTx, registerEnrichWorker } from "@/lib/enrich/enrich-queue";
 import { getSettings } from "@/lib/enrich/settings";
-import { enqueueQualifyInTx, registerQualifyWorker } from "@/lib/qualify/qualify-queue";
+import {
+  enqueueQualifyInTx,
+  registerQualifyProspectWorker,
+  registerQualifyWorker,
+} from "@/lib/qualify/qualify-queue";
 import { registerScanWorker } from "@/lib/signals/scan-queue";
 
 // Node-only runtime bootstrap. Kept out of instrumentation.ts so that nothing
@@ -27,28 +32,38 @@ export async function bootstrapNodeRuntime(): Promise<void> {
       await enqueueDraftInTx(tx, prospectId, true);
     },
   });
-  await registerQualifyWorker({
-    // Read the auto-enrich routing flag BEFORE the qualify transaction opens (outside it, so
-    // the tx stays write-only and never waits on a second pooled connection, ADR-0009), then
-    // return the in-tx handoff. Always draft from the signal so the prospect reaches the queue
-    // - the default Qualified -> Drafted path (ADR-0007). Enrichment is an ADDITIVE side-
-    // transition: when the opt-in setting is on, also enqueue it, and a successful enrich
-    // force-re-drafts from the dossier (the enrich worker's enqueueNext). Both enqueues are on
-    // the qualify transaction, so the prospect and its handoff jobs commit together - a
-    // qualified prospect is never stranded without its handoff.
-    resolveHandoff: async () => {
-      const { autoEnrich } = await getSettings();
-      return async (tx, ids) => {
-        for (const id of ids) await enqueueDraftInTx(tx, id, false);
-        if (autoEnrich) for (const id of ids) await enqueueEnrichInTx(tx, id);
-      };
-    },
-  });
+  // Read the auto-enrich routing flag BEFORE the qualify transaction opens (outside it, so
+  // the tx stays write-only and never waits on a second pooled connection, ADR-0009), then
+  // return the in-tx handoff. Always draft so the prospect reaches the queue - the default
+  // Qualified -> Drafted path (ADR-0007). Enrichment is an ADDITIVE side-transition: when the
+  // opt-in setting is on, also enqueue it, and a successful enrich force-re-drafts from the
+  // dossier (the enrich worker's enqueueNext). Both enqueues are on the qualify transaction,
+  // so the prospect and its handoff jobs commit together - never stranded without its handoff.
+  // Shared by both qualify entries (signal-keyed and prospect-keyed for manual leads, ADR-0010).
+  const resolveQualifyHandoff = async () => {
+    const { autoEnrich } = await getSettings();
+    return async (tx: DbTx, ids: string[]) => {
+      for (const id of ids) await enqueueDraftInTx(tx, id, false);
+      if (autoEnrich) for (const id of ids) await enqueueEnrichInTx(tx, id);
+    };
+  };
+  await registerQualifyWorker({ resolveHandoff: resolveQualifyHandoff });
+  await registerQualifyProspectWorker({ resolveHandoff: resolveQualifyHandoff });
   await registerScanWorker({
-    // Enqueue qualify INSIDE the signal-insert transaction (ADR-0009): a newly persisted
-    // signal and its qualify job commit together, so a committed signal is never un-qualified.
-    enqueueNext: async (tx, signalId) => {
-      await enqueueQualifyInTx(tx, signalId);
+    // Route the persisted-signal handoff BY KIND (linkedin-jobs-source): only a person signal
+    // enqueues qualify (which scores a person), INSIDE the signal-insert transaction (ADR-0009)
+    // so the signal and its qualify job commit together. A non-person signal (company/content/
+    // job) is persisted with no handoff - it awaits the normalize-expand stage (M2) that turns
+    // it into person prospects; logged so the deferral is observable, not silent.
+    enqueueNext: async (tx, signalId, kind) => {
+      if (kind === "person") {
+        await enqueueQualifyInTx(tx, signalId);
+      } else {
+        logger.info(
+          { signalId, kind },
+          "signal persisted without qualify handoff (awaits normalize-expand)",
+        );
+      }
     },
   });
 

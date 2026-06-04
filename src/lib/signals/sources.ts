@@ -26,3 +26,12 @@ export async function createSource(input: {
     .returning();
   return row;
 }
+
+// Update a source's connector configuration in place (source-connection). The source keeps
+// its id and its scan/signal history - retire-by-disable, never delete (signal-ingestion).
+export async function updateSourceConfig(
+  id: string,
+  config: Record<string, unknown>,
+): Promise<void> {
+  await getDb().update(sources).set({ config }).where(eq(sources.id, id));
+}

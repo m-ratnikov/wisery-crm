@@ -37,7 +37,7 @@ flowchart TB
 
 What crosses each boundary:
 - **CRM user <-> system**: inbound config (ICP, profile, sources) and approvals; outbound qualified prospects, dossiers, and optional drafts. This is the anchor-view surface.
-- **Signal sources -> system**: inbound raw source records (a person, company, or piece of content), pulled per the connector seam (D4).
+- **Signal sources -> system**: inbound raw source records (a person, company, piece of content, or job posting), pulled per the connector seam (D4).
 - **Scraping / enrichment provider <-> system** (optional, pluggable): when one is used, outbound scrape/enrich requests and inbound raw records / enrichment (normalized at our edge, D4), behind the D4 interfaces. Apify is one example; the system can instead self-host scraping (Puppeteer/Playwright) and reach sources directly, with no external provider. The same provider class can serve both signal capture and enrichment.
 - **LLM provider <-> system**: outbound qualify/draft prompts, inbound scores and drafts. Provider-agnostic behind an `LLMProvider` port, Anthropic the default adapter (D9). Carries prospect PII.
 - **Managed Postgres <-> system**: the system's own managed datastore. Shown as a dependency because it is hosted, but it holds our own schema (not a third-party system of record). How async jobs run on it is an L2/technology concern, fixed by ADR-0001.

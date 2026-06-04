@@ -9,7 +9,6 @@ The ingestion spine and top of the funnel (D3): durable Sources as config-as-dat
 - Spine and pipeline: [product-overview.md](../../../docs/product-overview.md) section 4; the scan flow in [system-design.md](../../../docs/architecture/system-design.md).
 - Data model: `Source` / `Scan` / `Signal` in [domain-model.md](../../../docs/architecture/domain-model.md) (this capability builds the first migration; downstream entities are modeled there).
 - Governing decisions: [ADR-0001](../../../docs/adr/0001-background-job-runtime.md) (in-process pg-boss, peel-safety), [ADR-0004](../../../docs/adr/0004-pg-boss-facade.md) (thin pg-boss facade); D4/D8 (connector contract), D3 (signals as top of funnel).
-
 ## Requirements
 ### Requirement: Signal sources persist as durable configuration
 
@@ -61,7 +60,7 @@ The system SHALL persist a signal at most once per source and dedup key. Re-scan
 
 ### Requirement: Every signal traces to its origin and is immutable
 
-Each persisted signal SHALL reference the source and the scan that produced it and SHALL retain its normalized payload and its kind (person, company, or content). Once persisted, a signal's content SHALL NOT be modified, so downstream stages can rely on it as a stable fact.
+Each persisted signal SHALL reference the source and the scan that produced it and SHALL retain its normalized payload and its kind (person, company, content, or job). Once persisted, a signal's content SHALL NOT be modified, so downstream stages can rely on it as a stable fact.
 
 #### Scenario: Signal resolves to its source and scan
 
@@ -87,4 +86,19 @@ The system SHALL ingest every source type through a single connector contract: a
 - **WHEN** a connector yields an item that does not satisfy the contract's normalized shape
 - **THEN** no signal is persisted for that item
 - **AND** it is counted as dropped for that scan rather than recorded as persisted
+
+### Requirement: A persisted signal is handed off for evaluation by its kind
+
+The system SHALL hand a newly persisted signal off to the qualification stage only when the signal is a person. A non-person signal (`company`, `content`, `job`) SHALL be persisted without a qualification handoff, because qualification scores a person and a non-person signal must first be expanded into people (the normalize-expand stage). This routing SHALL NOT alter the dedup or persistence path, which stays uniform across all kinds; only whether a qualification job is enqueued for the persisted signal depends on kind.
+
+#### Scenario: A person signal is handed off to qualification
+
+- **WHEN** a new `person` signal is persisted
+- **THEN** a qualification job is enqueued for it in the same transaction as its insert (unchanged behavior)
+
+#### Scenario: A non-person signal is persisted without a qualification handoff
+
+- **WHEN** a new `job` (or `company` or `content`) signal is persisted
+- **THEN** the signal is stored and traceable, and no qualification job is enqueued for it
+- **AND** it awaits the normalize-expand stage rather than being scored as a person
 

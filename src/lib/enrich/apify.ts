@@ -5,7 +5,7 @@ import {
   EnrichmentProviderError,
   type EnrichmentResult,
 } from "@/lib/enrich/provider";
-import type { SignalRow } from "@/lib/signals/connector";
+import type { PersonSubject } from "@/lib/prospect/identity";
 
 // The default managed adapter (ADR-0002): Apify keeps detection/ban risk off the user's
 // own account (D2). The concrete actor call lands when an actor id + APIFY_API_TOKEN are
@@ -14,7 +14,7 @@ import type { SignalRow } from "@/lib/signals/connector";
 export function createApifyEnrichment(): EnrichmentProvider {
   return {
     name: "apify",
-    enrich(signal: SignalRow): Promise<EnrichmentResult> {
+    enrich(subject: PersonSubject): Promise<EnrichmentResult> {
       const token = getConfig().apifyApiToken;
       if (!token) {
         return Promise.reject(
@@ -25,7 +25,7 @@ export function createApifyEnrichment(): EnrichmentProvider {
       }
       return Promise.reject(
         new EnrichmentProviderError(
-          `Apify enrichment for signal kind "${signal.kind}" is not yet wired to a concrete actor`,
+          `Apify enrichment for subject kind "${subject.kind}" is not yet wired to a concrete actor`,
         ),
       );
     },

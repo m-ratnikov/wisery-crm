@@ -48,10 +48,13 @@ async function closeScan(
 
 export async function runScan(
   sourceId: string,
-  // Enqueue qualification for a NEWLY persisted signal on the SAME transaction as its
-  // insert (ADR-0009), so a committed signal can never be stranded without its qualify job.
-  // Injected by the worker; absent in direct/test calls. Dedup duplicates never hand off.
-  opts: { enqueueNext?: (tx: DbTx, signalId: string) => Promise<void> } = {},
+  // Enqueue the next stage for a NEWLY persisted signal on the SAME transaction as its insert
+  // (ADR-0009), so a committed signal can never be stranded without its handoff. The signal's
+  // `kind` is passed so the composition root routes by it: only a person enqueues qualify; a
+  // non-person kind (company/content/job) is persisted but awaits normalize-expand
+  // (linkedin-jobs-source). Injected by the worker; absent in direct/test calls. Dedup
+  // duplicates never hand off.
+  opts: { enqueueNext?: (tx: DbTx, signalId: string, kind: string) => Promise<void> } = {},
 ): Promise<ScanResult> {
   const db = getDb();
 
@@ -94,7 +97,7 @@ export async function runScan(
           .onConflictDoNothing({ target: [signals.sourceId, signals.dedupKey] })
           .returning({ id: signals.id });
         if (inserted.length === 0) return null;
-        if (opts.enqueueNext) await opts.enqueueNext(tx, inserted[0].id);
+        if (opts.enqueueNext) await opts.enqueueNext(tx, inserted[0].id, parsed.data.kind);
         return inserted[0].id;
       });
       if (newSignalId) {

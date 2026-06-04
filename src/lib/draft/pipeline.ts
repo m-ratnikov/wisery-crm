@@ -29,7 +29,7 @@ export async function draftProspect(
   if (!loaded) {
     return { prospectId, drafted: false, skipped: true };
   }
-  const { signal } = loaded;
+  const { subject } = loaded;
 
   // Auto-draft idempotency (D-E): unless forced, a prospect that already has a selected
   // draft is left alone, so the automatic draft-on-qualify path never double-drafts. A
@@ -57,7 +57,7 @@ export async function draftProspect(
     .limit(1);
 
   // Generate outside the transaction (no network inside a tx).
-  const message = await draftMessage(signal, profile.profile, {
+  const message = await draftMessage(subject, profile.profile, {
     llm: opts.llm,
     dossier: dossier?.data,
   });

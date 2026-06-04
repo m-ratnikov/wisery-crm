@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getActiveRubric } from "@/lib/icp/config";
 import { getLLM } from "@/lib/llm";
 import type { LLMProvider } from "@/lib/llm/provider";
-import type { SignalRow } from "@/lib/signals/connector";
+import type { PersonSubject } from "@/lib/prospect/identity";
 import { icpScorePromptV1 } from "@/prompts/icp_score_v1";
 
 // The ported 1-5 ICP scorer (D5), reading the active rubric as config-as-data (D6) and
@@ -36,7 +36,7 @@ const SCORE_MODEL = "claude-haiku-4-5-20251001";
 const SCORE_MAX_TOKENS = 512;
 
 export async function scoreProspect(
-  signal: SignalRow,
+  subject: PersonSubject,
   opts: { llm?: LLMProvider } = {},
 ): Promise<ScoredProspect> {
   const active = await getActiveRubric();
@@ -52,8 +52,8 @@ export async function scoreProspect(
     JSON.stringify(active.criteria, null, 2),
     "",
     "## Signal",
-    `kind: ${signal.kind}`,
-    JSON.stringify(signal.payload, null, 2),
+    `kind: ${subject.kind}`,
+    JSON.stringify(subject.payload, null, 2),
   ].join("\n");
 
   const out = await llm.complete({
