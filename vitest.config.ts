@@ -9,10 +9,13 @@ const emptyStub = fileURLToPath(new URL("./tests/stubs/empty.ts", import.meta.ur
 export default defineConfig({
   test: {
     include: ["tests/**/*.test.ts"],
-    setupFiles: ["dotenv/config"],
-    // Integration suites share one Postgres (the dev DB via TEST_DATABASE_URL) and each
-    // truncates the tables it owns. Run test files sequentially so one suite's inserts
-    // never race another's FK-ordered truncation. The suite is small; correctness first.
+    // dotenv/config loads .env first; setup-db then remaps the test process onto TEST_DATABASE_URL
+    // and refuses to run against a non-test database, so integration suites never truncate the dev DB.
+    setupFiles: ["dotenv/config", "./tests/setup-db.ts"],
+    // Integration suites run against the dedicated test database (TEST_DATABASE_URL, remapped by
+    // setup-db above - never the dev DB) and each truncates the tables it owns. Run test files
+    // sequentially so one suite's inserts never race another's FK-ordered truncation. The suite is
+    // small; correctness first.
     fileParallelism: false,
     alias: {
       "@": srcDir,
