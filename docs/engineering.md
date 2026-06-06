@@ -85,11 +85,15 @@ Scope and cadence are deliberate:
 - `no-circular` - no import cycles.
 - `lib-not-to-app` - `src/lib` (lower layer) must not depend on `src/app`.
 - `runtime-bootstrap-isolation` - `src/lib/runtime` is reached only via `src/instrumentation.ts`'s dynamic import (ADR-0001), so nothing Node-specific is statically reachable from the Edge compile.
+- `*-not-to-adapters` (llm / enrich / signals) - only the composition point imports a concrete adapter; the port and every consumer depend on the interface (dependency inversion, the one mechanically-enforceable SOLID principle).
+- `jobs-facade-only-from-wrappers` - only `*-queue.ts` wrappers and the composition root (`src/lib/runtime`) import the jobs facade (`src/lib/jobs/index.ts`); orchestration cores and read-models depend on `db` only, the next-stage enqueue is injected at bootstrap (ADR-0001, ADR-0009). Generalises the earlier `pipeline-not-to-jobs`.
+- `pure-kernel-no-runtime-io` - the L0 pure kernel (ports, `*-view`, `*-map`, and the listed pure domain rules) must not have a runtime dependency on the DB connection (`db/index`), the jobs facade, or the logger; type-only imports and `db/schema` (DDL-as-data) are allowed. This makes the portable kernel a build-failing contract.
 
 The **server-only / client** boundary is enforced by `next build` (the `server-only` package
-throws when pulled into a client bundle), so it is not duplicated here. The ruleset has a
-documented extension point: as the D4/D9 ports land, add "adapters depend on ports, never the
-reverse" rules - the one SOLID principle (dependency inversion) that is mechanically enforceable.
+throws when pulled into a client bundle), so it is not duplicated here. Together these rules make
+the internal layering described in [module-conventions.md](module-conventions.md) a build-failing
+contract, not a convention: the pure kernel cannot grow an I/O dependency, and a domain core
+cannot reach the queue or a concrete adapter, without `depcruise` going red.
 
 ## Duplication (jscpd)
 

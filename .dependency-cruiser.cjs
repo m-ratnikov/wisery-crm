@@ -59,15 +59,40 @@ module.exports = {
       to: { path: "^src/lib/signals/source-kinds\\.ts$" },
     },
     {
-      // System-review FF-4 (2026-06-04): a domain pipeline core must not reach the jobs facade.
-      // Stage-to-stage handoff is injected at the composition root (bootstrap), so a core stays
-      // role-agnostic and db-only (ADR-0001 peel-safety). Honored by convention before this rule.
-      name: "pipeline-not-to-jobs",
+      // Generalises System-review FF-4 (2026-06-04) from pipeline.ts to all of src/lib: the
+      // next-stage handoff is injected at the composition root (bootstrap), so a core stays
+      // role-agnostic and db-only (ADR-0001 peel-safety, ADR-0009). Only the *-queue.ts wrappers
+      // and the composition root touch the facade; the app layer (delivery) may read it for the
+      // monitor, so this is scoped to src/lib. Targets index.ts (the runtime facade), not the
+      // L0 activity-view/-map types in the same dir.
+      name: "jobs-facade-only-from-wrappers",
       severity: "error",
       comment:
-        "Domain pipeline cores (*/pipeline.ts) must not import the jobs facade (@/lib/jobs). The next-stage enqueue is injected at the composition root; a core depends on db only.",
-      from: { path: "^src/lib/[^/]+/pipeline\\.ts$" },
-      to: { path: "^src/lib/jobs(/|$)" },
+        "Only *-queue.ts wrappers and the composition root (src/lib/runtime) may import the jobs facade (src/lib/jobs/index.ts). Orchestration cores and read-models depend on db only; the next-stage enqueue is injected at the composition root (ADR-0001, ADR-0009). See docs/module-conventions.md.",
+      from: { path: "^src/lib/", pathNot: "(-queue\\.ts$|^src/lib/runtime/|^src/lib/jobs/)" },
+      to: { path: "^src/lib/jobs/index\\.ts$" },
+    },
+    {
+      // The L0 pure kernel - ports (provider.ts/connector.ts), DTO types (*-view.ts), pure mappers
+      // (*-map.ts), and the listed pure domain-rule files - is the portable core. It must have NO
+      // RUNTIME dependency on the database CONNECTION (db/index, i.e. getDb/the pool), the jobs
+      // facade, or the logger; type-only imports are erased at runtime, so they are exempt
+      // (dependencyTypesNot). db/schema is deliberately NOT a target: it is pure DDL-as-data, and
+      // the kernel reads its enum values (e.g. signalKind) as the single source of truth rather
+      // than duplicating them (knowledge-DRY). Adapters and src/app are already barred for all of
+      // lib by the *-not-to-adapters and lib-not-to-app rules. Makes the liftable kernel a
+      // build-failing contract (docs/module-conventions.md).
+      name: "pure-kernel-no-runtime-io",
+      severity: "error",
+      comment:
+        "L0 pure-kernel files (ports, *-view, *-map, and the listed pure domain rules) must not have a runtime dependency on the DB connection (src/lib/db/index.ts), the jobs facade, or the logger, so the domain core stays portable. db/schema (DDL-as-data) and type-only imports are allowed. See docs/module-conventions.md.",
+      from: {
+        path: "^src/lib/.*(-view|-map)\\.ts$|^src/lib/[^/]+/(provider|connector)\\.ts$|^src/lib/qualify/status\\.ts$|^src/lib/prospect/identity\\.ts$|^src/lib/icp/schema\\.ts$|^src/lib/signals/source-kind-schemas\\.ts$|^src/lib/signals/connectors/linkedin-jobs\\.ts$",
+      },
+      to: {
+        path: "^src/lib/db/index\\.ts$|^src/lib/jobs/index\\.ts$|^src/lib/log",
+        dependencyTypesNot: ["type-only"],
+      },
     },
     {
       name: "llm-port-not-to-adapters",

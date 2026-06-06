@@ -6,7 +6,7 @@ import type {
   QueueActivity,
   ScheduleInfo,
   WorkerLiveness,
-} from "@/lib/jobs/activity";
+} from "@/lib/jobs/activity-view";
 import type { ScanHistorySnapshot, ScanRunView } from "@/lib/signals/scan-history-view";
 
 // The one client component in this feature: live status is an interval timer plus a fetch

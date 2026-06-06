@@ -25,6 +25,7 @@ TypeScript 5 strict, Node 22 LTS, Next.js 16 (App Router + Turbopack), React 19 
 ## Engineering (definition of done)
 
 - Reuse before build. Find and follow the existing pattern; do not add a parallel mechanism for config, data, jobs, or LLM. Read config via `src/lib/config`, data via `src/lib/db`, background work via the `src/lib/jobs` facade, LLM via the `LLMProvider` port. State in a change's design which existing modules/seams it reuses.
+- Code is organised in vertical capability slices under `src/lib` (role-marker filenames like `*-view`/`*-map`/`*-queue`/`provider`/`pipeline`; domain files keep ubiquitous-language names). The L0 pure kernel, the jobs facade, and the adapter seams are build-enforced boundaries (dependency-cruiser). Convention and layering: `docs/module-conventions.md`.
 - DRY is one authoritative representation per business rule, not textual sameness. Rule of three: tolerate the second occurrence, extract a shared abstraction only at the third (avoid premature abstraction).
 - Done = `npm run verify` green (typecheck, lint, format, dependency-cruiser boundaries, jscpd duplication, per-file coverage, build) plus a `code-review` pass on the diff before archive. The review **loops, not one-shot**: after applying review fixes, re-run `verify` AND re-review the fix delta with full context (surrounding code, callers, the invariants it touches - not the diff alone); archive only once a pass finds nothing material. Full posture: `docs/roadmap.md`; testing strategy + review checklist: `docs/engineering.md`.
 

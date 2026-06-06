@@ -5,7 +5,7 @@ import { getConfig } from "@/lib/config/env";
 import type { DbTx } from "@/lib/db";
 import { logger } from "@/lib/log";
 import { assembleActivity, assembleSchedules, unavailable } from "@/lib/jobs/activity-map";
-import type { JobActivitySnapshot, ScheduleSnapshot } from "@/lib/jobs/activity";
+import type { JobActivitySnapshot, ScheduleSnapshot } from "@/lib/jobs/activity-view";
 
 // pg-boss reached through a thin facade (ADR-0004): one localized call site, not
 // a portability seam. It holds its OWN pool/connection, separate from the app's
@@ -67,7 +67,7 @@ export async function work<T>(
 }
 
 // Read-only job-activity introspection (job-activity-monitor). Thin pg-boss I/O only; the pure
-// raw -> DTO mapping lives in ./activity (the testable half). Composed from cheap sources only -
+// raw -> DTO mapping lives in ./activity-map (the testable half). Composed from cheap sources only -
 // never an unfiltered findJobs (no SQL LIMIT; it would page the once-a-minute heartbeat queue's
 // retained completed-job history):
 //   - getQueues(): per-queue counts (one aggregated query)

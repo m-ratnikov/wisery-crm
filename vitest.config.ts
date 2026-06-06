@@ -47,7 +47,7 @@ export default defineConfig({
         // or performative tests; the scan pipeline itself is covered by integration.
         // index.ts stays excluded as I/O delegation; its pure raw->DTO mapping half
         // (activity-map.ts) is coverage-included and unit-tested - same split as the LinkedIn
-        // connector (normalizeJob included, the network client excluded). activity.ts is
+        // connector (normalizeJob included, the network client excluded). activity-view.ts is
         // types-only (no executable lines).
         "src/lib/jobs/index.ts",
         "src/lib/signals/scan-queue.ts",

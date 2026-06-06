@@ -6,13 +6,13 @@ import type {
   ScheduleInfo,
   ScheduleSnapshot,
   WorkerLiveness,
-} from "@/lib/jobs/activity";
+} from "@/lib/jobs/activity-view";
 
 // The pure, testable half of the job-activity read-model (job-activity-monitor): it maps raw
 // pg-boss shapes to the DTOs the monitor renders. The pg-boss I/O lives in ./index (the thin,
 // coverage-excluded facade); this module stays free of I/O so its mapping is unit-tested, the
 // same split as the LinkedIn connector (normalizeJob vs the network client). DTO types live in
-// ./activity (types-only, client-safe); this module is runtime and server-side.
+// ./activity-view (types-only, client-safe); this module is runtime and server-side.
 
 // Cap the individual waiting-job rows we map and transmit per queue. findJobs has no SQL LIMIT,
 // so the cap is applied in memory: it bounds the browser payload when a queue backs up (the

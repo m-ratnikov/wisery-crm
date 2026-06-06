@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { listJobActivity, listSchedules } from "@/lib/jobs";
-import type { JobsMonitorData } from "@/lib/jobs/activity";
+import type { JobsMonitorData } from "@/lib/jobs/activity-view";
 import { listScanHistory } from "@/lib/signals/scan-history";
 import { JobsMonitor } from "./_components/JobsMonitor";
 

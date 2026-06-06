@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { listJobActivity, listSchedules } from "@/lib/jobs";
-import type { JobsMonitorData } from "@/lib/jobs/activity";
+import type { JobsMonitorData } from "@/lib/jobs/activity-view";
 import { listScanHistory } from "@/lib/signals/scan-history";
 
 // Live job state, so never cached: each poll re-reads the running snapshot.
