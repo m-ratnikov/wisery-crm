@@ -16,19 +16,18 @@ export async function loadProspectById(personId: string): Promise<ProspectRow> {
   return prospect;
 }
 
-// The shared preamble for the draft and enrich pipelines: load a prospect that is in a
-// workable disposition (`qualified` or `queued`) together with its PersonSubject (resolved
-// from its signal for a discovered prospect, or its own columns for a manual one - ADR-0010).
-// Returns null when the prospect is not workable (below-bar, acted, dismissed, closed, ...),
-// which both pipelines treat as a skip; throws if the prospect (or a signal-origin prospect's
-// signal) is missing - a precondition error the worker retries. One authoritative
+// The preamble for the enrich pipeline: load a prospect in a workable disposition (`qualified`)
+// together with its PersonSubject (resolved from its signal for a discovered prospect, or its own
+// columns for a manual one - ADR-0010). Returns null when the prospect is not workable (new,
+// below-bar), which the pipeline treats as a skip; throws if the prospect (or a signal-origin
+// prospect's signal) is missing - a precondition error the worker retries. One authoritative
 // representation of "is this prospect actionable", origin-agnostic for its consumers.
 export async function loadActionableProspect(
   personId: string,
 ): Promise<{ prospect: ProspectRow; subject: PersonSubject } | null> {
   const db = getDb();
   const prospect = await loadProspectById(personId);
-  if (prospect.status !== "qualified" && prospect.status !== "queued") {
+  if (prospect.status !== "qualified") {
     return null;
   }
   const [signal] = prospect.signalId

@@ -7,9 +7,8 @@ import { NavLink } from "./_components/NavLink";
 // api/health and the /prototype tree live outside this group and do not get the shell.
 const anchorViews = [
   { href: "/icp-config", label: "ICP & source config", badge: "#1" },
-  { href: "/triage", label: "Triage", badge: "T" },
+  { href: "/queue", label: "Queue", badge: "T" },
   { href: "/prospect-list", label: "Person list", badge: "#3" },
-  { href: "/review-queue", label: "Review & approve queue", badge: "#2" },
   { href: "/feed", label: "Feed", badge: "#4" },
 ];
 

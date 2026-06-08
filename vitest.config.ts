@@ -51,8 +51,6 @@ export default defineConfig({
         // types-only (no executable lines).
         "src/lib/jobs/index.ts",
         "src/lib/signals/scan-queue.ts",
-        "src/lib/qualify/qualify-queue.ts",
-        "src/lib/draft/draft-queue.ts",
         "src/lib/enrich/enrich-queue.ts",
         "src/lib/posts/posts-queue.ts",
         "src/lib/triage/advisory-queue.ts",

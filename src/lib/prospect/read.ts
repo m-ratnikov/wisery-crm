@@ -1,12 +1,12 @@
 import "server-only";
-import { and, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { dossiers, drafts, person, scorings, signals, sources } from "@/lib/db/schema";
+import { dossiers, person, scorings, signals, sources } from "@/lib/db/schema";
 
 // The prospect-list read-model (prospect-list D-A/D-B): one row per prospect with its
-// disposition, latest score, source, and the DERIVED enriched/drafted facets (a dossier /
-// a selected draft exists - ADR-0008, not a status). Composed from small queries to avoid
-// join multiplicity when a prospect has been re-scored or re-drafted.
+// disposition, latest score, source, and the DERIVED enriched facet (a dossier exists - ADR-0008,
+// not a status). Drafting was retired (ADR-0019), so there is no drafted facet. Composed from
+// small queries to avoid join multiplicity when a prospect has been re-scored.
 
 export interface ProspectListItem {
   id: string;
@@ -17,7 +17,6 @@ export interface ProspectListItem {
   sourceKind: string;
   name: string;
   enriched: boolean;
-  drafted: boolean;
   createdAt: Date;
 }
 
@@ -96,11 +95,6 @@ export async function listProspects(): Promise<ProspectListItem[]> {
   const enrichedIds = new Set(
     (await db.select({ id: dossiers.personId }).from(dossiers)).map((r) => r.id),
   );
-  const draftedIds = new Set(
-    (
-      await db.select({ id: drafts.personId }).from(drafts).where(eq(drafts.status, "selected"))
-    ).map((r) => r.id),
-  );
 
   return base.map((r) => ({
     id: r.id,
@@ -112,7 +106,6 @@ export async function listProspects(): Promise<ProspectListItem[]> {
     sourceKind: r.sourceKind ?? "manual",
     name: displayName(r),
     enriched: enrichedIds.has(r.id),
-    drafted: draftedIds.has(r.id),
     createdAt: r.createdAt,
   }));
 }
@@ -124,7 +117,6 @@ export interface ProspectDetail {
   score: number | null;
   reason: string | null;
   summary: string | null;
-  draft: string | null;
   dossier: unknown;
   createdAt: Date;
 }
@@ -140,11 +132,6 @@ export async function getProspectDetail(personId: string): Promise<ProspectDetai
     .where(eq(scorings.personId, personId))
     .orderBy(desc(scorings.scoredAt), desc(scorings.id))
     .limit(1);
-  const [dr] = await db
-    .select({ body: drafts.body })
-    .from(drafts)
-    .where(and(eq(drafts.personId, personId), eq(drafts.status, "selected")))
-    .limit(1);
   const [dos] = await db
     .select({ data: dossiers.data })
     .from(dossiers)
@@ -158,7 +145,6 @@ export async function getProspectDetail(personId: string): Promise<ProspectDetai
     score: sc?.score ?? null,
     reason: sc?.reason ?? null,
     summary: sc?.summary ?? null,
-    draft: dr?.body ?? null,
     dossier: dos?.data ?? null,
     createdAt: p.createdAt,
   };

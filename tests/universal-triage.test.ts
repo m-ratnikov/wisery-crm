@@ -136,26 +136,58 @@ describe.skipIf(!url)("universal-triage: advisory + decide (integration)", () =>
     expect(after).toHaveLength(1);
   });
 
-  it("approving a person signal creates a prospect Person and enqueues qualify", async () => {
+  it("approving a person signal creates a prospect Person and promotes the advisory Scoring", async () => {
     const signalId = await makeSignal("person", { name: "Jane" }, "s1");
-    let enqueuedFor = "";
-    const out = await decide.approveSignal(signalId, {
-      enqueueQualify: (_tx, personId) => {
-        enqueuedFor = personId;
-        return Promise.resolve();
-      },
-    });
+    // The advisory pass scores the signal (an icp rubric is seeded in beforeEach), so approval has
+    // an advisory to promote.
+    await advisory.runAdvisoryFilter(signalId, { llm: scorer(4) });
+
+    const out = await decide.approveSignal(signalId);
     expect(out).toMatchObject({ kind: "person", alreadyDecided: false });
     const [p] = await getDb()
       .select()
       .from(schema.person)
       .where(eq(schema.person.signalId, signalId));
-    expect(p).toMatchObject({ type: "prospect", origin: "signal", status: "new" });
-    expect(enqueuedFor).toBe(p.id);
+    // The advisory score (4) is promoted and the disposition derives from it (ADR-0019): a
+    // qualifying advisory makes the approved person `qualified` without a second LLM pass.
+    expect(p).toMatchObject({ type: "prospect", origin: "signal", status: "qualified" });
     expect(out.createdEntityId).toBe(p.id);
+
+    // The promoted initial Scoring carries the advisory score, provenance `advisory`, the sentinel
+    // provider/prompt/model, and NO LLM call (ADR-0019).
+    const ss = await getDb()
+      .select()
+      .from(schema.scorings)
+      .where(eq(schema.scorings.personId, p.id));
+    expect(ss).toHaveLength(1);
+    expect(ss[0].score).toBe(4);
+    expect(ss[0].provenance).toBe("advisory");
+    expect(ss[0].provider).toBe("advisory");
+    expect(ss[0].promptVersion).toBe("advisory");
+    expect(ss[0].model).toBe("advisory");
   });
 
-  it("approving a company signal creates a Company", async () => {
+  it("approving a person signal with no active rubric of its kind writes no Scoring but still succeeds", async () => {
+    const signalId = await makeSignal("person", { name: "Jane" }, "s1");
+    await advisory.runAdvisoryFilter(signalId, { llm: scorer(4) });
+    // Drop the icp rubric so there is nothing to express the promotion against (the person reads
+    // `unassessed`); approval must not fail.
+    await getDb().delete(schema.rubric);
+
+    const out = await decide.approveSignal(signalId);
+    expect(out).toMatchObject({ kind: "person", alreadyDecided: false });
+    const [p] = await getDb()
+      .select()
+      .from(schema.person)
+      .where(eq(schema.person.signalId, signalId));
+    // No rubric to promote against -> no Scoring and the person stays `new` (unassessed, ADR-0019).
+    expect(p.status).toBe("new");
+    expect(
+      await getDb().select().from(schema.scorings).where(eq(schema.scorings.personId, p.id)),
+    ).toHaveLength(0);
+  });
+
+  it("approving a company signal creates a Company and writes no Scoring", async () => {
     const signalId = await makeSignal("company", { name: "Acme" }, "co1");
     const out = await decide.approveSignal(signalId);
     expect(out.kind).toBe("company");
@@ -165,6 +197,8 @@ describe.skipIf(!url)("universal-triage: advisory + decide (integration)", () =>
       .where(eq(schema.companies.signalId, signalId));
     expect(c.name).toBe("Acme");
     expect(out.createdEntityId).toBe(c.id);
+    // A company creates no Person and no Scoring (ADR-0017 company-rubric-no-Scoring exception).
+    expect(await getDb().select().from(schema.scorings)).toHaveLength(0);
   });
 
   it("approving a content signal creates a peer Person with the post attached", async () => {

@@ -12,7 +12,6 @@ describe.skipIf(!url)("prospect-list: read-model (integration)", () => {
   let sources: typeof import("@/lib/signals/sources");
   let scanPipeline: typeof import("@/lib/signals/pipeline");
   let qualify: typeof import("@/lib/qualify/pipeline");
-  let draft: typeof import("@/lib/draft/pipeline");
   let enrich: typeof import("@/lib/enrich/pipeline");
   let read: typeof import("@/lib/prospect/read");
   let fakeLLM: typeof import("@/lib/llm/fake");
@@ -35,13 +34,11 @@ describe.skipIf(!url)("prospect-list: read-model (integration)", () => {
   };
   const scorer = (s: number) =>
     fakeLLM.createFakeLLM(() => ({ score: s, reason: "fits the bar", summary: "a VP Eng" }));
-  const drafter = () => fakeLLM.createFakeLLM(() => ({ body: "Saw your hiring push." }));
   const enricher = () => fakeEnrich.createFakeEnrichment(() => ({ headline: "VP Eng, Series A" }));
 
   async function truncateAll() {
     const db = getDb();
     for (const t of [
-      schema.drafts,
       schema.dossiers,
       schema.scorings,
       schema.person,
@@ -74,7 +71,6 @@ describe.skipIf(!url)("prospect-list: read-model (integration)", () => {
     sources = await import("@/lib/signals/sources");
     scanPipeline = await import("@/lib/signals/pipeline");
     qualify = await import("@/lib/qualify/pipeline");
-    draft = await import("@/lib/draft/pipeline");
     enrich = await import("@/lib/enrich/pipeline");
     read = await import("@/lib/prospect/read");
     fakeLLM = await import("@/lib/llm/fake");
@@ -89,12 +85,11 @@ describe.skipIf(!url)("prospect-list: read-model (integration)", () => {
     await closeDb();
   });
 
-  it("lists a qualified+enriched+drafted prospect with derived facets, and a bare one without", async () => {
+  it("lists a qualified+enriched prospect with the derived enriched facet, and a bare one without", async () => {
     const full = await makeProspect(4);
     await enrich.enrichProspect(full, { provider: enricher() });
-    await draft.draftProspect(full, { llm: drafter() });
 
-    const bare = await makeProspect(4); // qualified only
+    const bare = await makeProspect(4); // qualified, not enriched
 
     const items = await read.listProspects();
     const byId = new Map(items.map((i) => [i.id, i]));
@@ -103,24 +98,20 @@ describe.skipIf(!url)("prospect-list: read-model (integration)", () => {
     expect(fullItem?.score).toBe(4);
     expect(fullItem?.sourceKind).toBe("fixture");
     expect(fullItem?.enriched).toBe(true);
-    expect(fullItem?.drafted).toBe(true);
-    expect(fullItem?.status).toBe("queued");
+    expect(fullItem?.status).toBe("qualified");
 
     const bareItem = byId.get(bare);
     expect(bareItem?.enriched).toBe(false);
-    expect(bareItem?.drafted).toBe(false);
     expect(bareItem?.status).toBe("qualified");
   });
 
-  it("returns a prospect's detail with its latest scoring, selected draft, and dossier", async () => {
+  it("returns a prospect's detail with its latest scoring and dossier", async () => {
     const personId = await makeProspect(5);
     await enrich.enrichProspect(personId, { provider: enricher() });
-    await draft.draftProspect(personId, { llm: drafter() });
 
     const detail = await read.getProspectDetail(personId);
     expect(detail?.score).toBe(5);
     expect(detail?.reason).toMatch(/bar/i);
-    expect(detail?.draft).toMatch(/hiring push/i);
     expect(detail?.dossier).toEqual({ headline: "VP Eng, Series A" });
   });
 

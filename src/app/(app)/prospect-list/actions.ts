@@ -3,16 +3,15 @@
 import { revalidatePath } from "next/cache";
 import { generateComment } from "@/lib/comments/generate";
 import { dismissComment, markCommentPosted } from "@/lib/comments/read";
-import { enqueueDraft } from "@/lib/draft/draft-queue";
 import { enqueueEnrich, enqueueEnrichForProspects } from "@/lib/enrich/enrich-queue";
 import { setAutoEnrich } from "@/lib/enrich/settings";
 import { setMonitored } from "@/lib/posts/pipeline";
 import { enqueueFetchPosts } from "@/lib/posts/posts-queue";
 import { addManualLead } from "@/lib/prospect/manual";
-import { enqueueQualifyProspect } from "@/lib/qualify/qualify-queue";
+import { qualifyProspect } from "@/lib/qualify/pipeline";
 
 // Server Actions for the prospect-list anchor view (prospect-list D-D): thin wrappers over
-// the built enrichment/drafting/settings entry points, each revalidating the route.
+// the built enrichment/scoring/settings entry points, each revalidating the route.
 //
 // D1: unauthenticated by design (single-user MVP). Server Actions are reachable by direct
 // POST, so authorization MUST be added here at the productization milestone. This is the
@@ -39,34 +38,29 @@ export async function batchEnrichAction(formData: FormData): Promise<void> {
   revalidatePath(ROUTE);
 }
 
-export async function regenerateDraftAction(formData: FormData): Promise<void> {
-  await enqueueDraft(field(formData, "id"), true);
-  revalidatePath(ROUTE);
-}
-
 export async function setAutoEnrichAction(formData: FormData): Promise<void> {
   await setAutoEnrich(field(formData, "autoEnrich") === "true");
   revalidatePath(ROUTE);
 }
 
-// Add a lead by hand (ADR-0010): persist the manual prospect, then enqueue qualification
-// fire-and-forget (ADR-0009 user-triggered carve-out). The manual-lead schema validates the
-// input (name required) and rejects an empty submission at the boundary.
+// Add a lead by hand (ADR-0010): persist the manual prospect only. It does NOT auto-score
+// (ADR-0019) - a hand-created person has no advisory to promote and no reason to spend an LLM
+// call unasked; it starts `new` and is scored when the user clicks Re-score.
 export async function addLeadAction(formData: FormData): Promise<void> {
-  const id = await addManualLead({
+  await addManualLead({
     name: field(formData, "name"),
     headline: field(formData, "headline") || undefined,
     company: field(formData, "company") || undefined,
     linkedinUrl: field(formData, "linkedinUrl") || undefined,
   });
-  await enqueueQualifyProspect(id);
   revalidatePath(ROUTE);
 }
 
-// Recover a manual prospect whose fire-and-forget qualify enqueue failed (it sits in `new`):
-// re-enqueue qualification. qualifyProspect's scored-already guard keeps this idempotent.
-export async function reQualifyAction(formData: FormData): Promise<void> {
-  await enqueueQualifyProspect(field(formData, "id"));
+// Re-score a person on demand (ADR-0019): synchronous, user-triggered. The user waits and gets a
+// fresh `llm`-provenance Scoring superseding any prior (advisory or llm) row; an error surfaces to
+// the user with no background retry. This is the single on-demand scoring action.
+export async function reScoreAction(formData: FormData): Promise<void> {
+  await qualifyProspect(field(formData, "id"));
   revalidatePath(ROUTE);
 }
 

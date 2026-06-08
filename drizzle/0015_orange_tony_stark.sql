@@ -1,0 +1,1 @@
+ALTER TABLE "scorings" ADD COLUMN "provenance" text DEFAULT 'llm' NOT NULL;

@@ -276,8 +276,13 @@ export const scorings = pgTable(
     score: smallint("score").notNull(), // 1-5, or -1 for insufficient data
     reason: text("reason"),
     summary: text("summary"),
+    // How this score was produced (ADR-0019): `llm` = a real scorer call; `advisory` = the
+    // cheap triage advisory score promoted at approval (no LLM). The learning loop (D7) excludes
+    // `advisory` rows so the cheap pass never tunes the bar (ADR-0017 purpose preserved).
+    provenance: text("provenance").notNull().default("llm"),
     // The LLM provider + model + prompt version that produced this score, so outcomes can
-    // be evaluated per provider+model and per prompt version over time (D7, ADR-0003).
+    // be evaluated per provider+model and per prompt version over time (D7, ADR-0003). For an
+    // `advisory`-provenance row these carry the `advisory` sentinel (no real LLM call).
     ...llmCols(),
     scoredAt: timestamp("scored_at", { withTimezone: true }).notNull().defaultNow(),
   },

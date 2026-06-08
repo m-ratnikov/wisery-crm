@@ -34,7 +34,6 @@ describe.skipIf(!url)("enrichment: pipeline (integration)", () => {
   let sources: typeof import("@/lib/signals/sources");
   let scanPipeline: typeof import("@/lib/signals/pipeline");
   let qualify: typeof import("@/lib/qualify/pipeline");
-  let draft: typeof import("@/lib/draft/pipeline");
   let enrich: typeof import("@/lib/enrich/pipeline");
   let settingsMod: typeof import("@/lib/enrich/settings");
   let fakeLLM: typeof import("@/lib/llm/fake");
@@ -59,17 +58,9 @@ describe.skipIf(!url)("enrichment: pipeline (integration)", () => {
     fakeLLM.createFakeLLM(() => ({ score, reason: "fits", summary: "a prospect" }));
   const enricher = () =>
     createFakeEnrichment(() => ({ headline: "VP Eng at a Series A", note: "hiring senior staff" }));
-  // The fake drafter reports whether the dossier reached the prompt context.
-  const drafter = () =>
-    fakeLLM.createFakeLLM((req) => ({
-      body: String((req.messages[0] as { content: string }).content).includes("Enrichment dossier")
-        ? "grounded-in-dossier"
-        : "from-signal-only",
-    }));
 
   async function truncateAll() {
     const db = getDb();
-    await db.delete(schema.drafts);
     await db.delete(schema.dossiers);
     await db.delete(schema.scorings);
     await db.delete(schema.person);
@@ -99,7 +90,6 @@ describe.skipIf(!url)("enrichment: pipeline (integration)", () => {
     sources = await import("@/lib/signals/sources");
     scanPipeline = await import("@/lib/signals/pipeline");
     qualify = await import("@/lib/qualify/pipeline");
-    draft = await import("@/lib/draft/pipeline");
     enrich = await import("@/lib/enrich/pipeline");
     settingsMod = await import("@/lib/enrich/settings");
     fakeLLM = await import("@/lib/llm/fake");
@@ -113,7 +103,7 @@ describe.skipIf(!url)("enrichment: pipeline (integration)", () => {
     await closeDb();
   });
 
-  it("enriches a qualified prospect into one dossier and a re-draft grounded in it", async () => {
+  it("enriches a qualified prospect into one dossier", async () => {
     const personId = await makeProspect(4);
     const enriched = await enrich.enrichProspect(personId, { provider: enricher() });
     expect(enriched).toMatchObject({ enriched: true, skipped: false });
@@ -125,15 +115,6 @@ describe.skipIf(!url)("enrichment: pipeline (integration)", () => {
       .where(eq(schema.dossiers.personId, personId));
     expect(dossierRows).toHaveLength(1);
     expect(dossierRows[0].provider).toBe("fake");
-
-    // The forced re-draft (what bootstrap wires as the enrich worker's enqueueNext) is
-    // grounded in the dossier.
-    await draft.draftProspect(personId, { llm: drafter(), force: true });
-    const [selected] = await db
-      .select()
-      .from(schema.drafts)
-      .where(eq(schema.drafts.personId, personId));
-    expect(selected.body).toBe("grounded-in-dossier");
   });
 
   it("re-enriching updates the single dossier (no duplicate)", async () => {

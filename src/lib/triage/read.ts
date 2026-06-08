@@ -1,5 +1,5 @@
 import "server-only";
-import { desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, isNull } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { signalAdvisory, signalDecisions, signals } from "@/lib/db/schema";
 
@@ -17,7 +17,15 @@ export interface TriageItem {
   advisoryReason: string | null;
 }
 
-export async function listTriage(): Promise<TriageItem[]> {
+// `minScore`: keep only items whose advisory score is at least the floor. It is added to the
+// WHERE alongside the pending filter, NOT moved onto the join's ON clause, so the LEFT JOIN
+// anti-strand shape holds (a pending signal is never dropped by an absent decision row). Without
+// the filter an un-scored signal (null advisory) still appears; with it, a null advisory fails
+// `>=` and is excluded - the explicit "show me only scored, qualifying signals" Queue view.
+export async function listTriage(opts: { minScore?: number } = {}): Promise<TriageItem[]> {
+  const pending = isNull(signalDecisions.id);
+  const where =
+    opts.minScore === undefined ? pending : and(pending, gte(signalAdvisory.score, opts.minScore));
   return getDb()
     .select({
       signalId: signals.id,
@@ -31,6 +39,6 @@ export async function listTriage(): Promise<TriageItem[]> {
     .from(signals)
     .leftJoin(signalDecisions, eq(signals.id, signalDecisions.signalId))
     .leftJoin(signalAdvisory, eq(signals.id, signalAdvisory.signalId))
-    .where(isNull(signalDecisions.id))
+    .where(where)
     .orderBy(desc(signals.createdAt));
 }

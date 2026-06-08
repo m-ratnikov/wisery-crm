@@ -101,6 +101,9 @@ describe.skipIf(!url)("qualification: qualify pipeline (integration)", () => {
       .where(eq(schema.scorings.personId, ps[0].id));
     expect(ss).toHaveLength(1);
     expect(ss[0].score).toBe(4);
+    // A real scorer call writes an `llm`-provenance row (distinct from the no-LLM advisory
+    // Scoring approval promotes - ADR-0019).
+    expect(ss[0].provenance).toBe("llm");
     expect(ss[0].provider).toBe("fake");
     expect(ss[0].promptVersion).toBe("v1");
     expect(ss[0].model).toBe("claude-haiku-4-5-20251001");

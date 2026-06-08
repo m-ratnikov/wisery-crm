@@ -23,10 +23,16 @@ describe("gateStatus (the >= 3 score gate, D5)", () => {
   });
 });
 
-describe("prospectStatusSchema (the 7-value disposition vocabulary, ADR-0008)", () => {
+describe("prospectStatusSchema (the disposition vocabulary, ADR-0008/0019)", () => {
   it("accepts every disposition value", () => {
-    for (const s of ["new", "below_bar", "qualified", "queued", "acted", "dismissed", "closed"]) {
+    for (const s of ["new", "below_bar", "qualified"]) {
       expect(prospectStatusSchema.parse(s)).toBe(s);
+    }
+  });
+
+  it("rejects the values retired with the drafting stage and review queue (ADR-0019)", () => {
+    for (const s of ["queued", "acted", "dismissed", "closed"]) {
+      expect(prospectStatusSchema.safeParse(s).success).toBe(false);
     }
   });
 

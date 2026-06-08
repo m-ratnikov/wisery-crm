@@ -1,20 +1,11 @@
 import "server-only";
 import { z } from "zod";
 
-// The full Person disposition vocabulary (ADR-0008: status is disposition-only;
-// `enriched`/`drafted` are NOT statuses - derived from the DOSSIER/DRAFT relations;
-// `scored` dropped - scoring gates straight to qualified/below_bar). The enum is the
-// decided vocabulary even though each capability writes only a subset (qualification:
-// qualified/below_bar; drafting: queued; review-queue: acted/dismissed/closed).
-export const prospectStatusSchema = z.enum([
-  "new",
-  "below_bar",
-  "qualified",
-  "queued",
-  "acted",
-  "dismissed",
-  "closed",
-]);
+// The Person disposition vocabulary (ADR-0008: status is disposition-only; `enriched` is NOT a
+// status - derived from the DOSSIER relation). ADR-0019 retired the drafting stage and the
+// qualify-prospect worker, so `queued`/`acted`/`dismissed`/`closed` are now unsettable and dropped:
+// a person is `new` until scored, then gated to `qualified`/`below_bar` by re-score.
+export const prospectStatusSchema = z.enum(["new", "below_bar", "qualified"]);
 
 export type ProspectStatus = z.infer<typeof prospectStatusSchema>;
 

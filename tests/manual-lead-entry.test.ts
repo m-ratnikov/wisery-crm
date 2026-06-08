@@ -133,7 +133,7 @@ describe.skipIf(!url)("manual-lead-entry: pipeline (integration)", () => {
     await closeDb();
   });
 
-  it("adds a manual lead (no signal) and qualifies it by prospect id", async () => {
+  it("a manual lead starts unscored (no auto-score) and re-score writes an llm Scoring", async () => {
     const id = await manual.addManualLead({ name: "Alice", company: "Acme" });
     const db = getDb();
     const [p] = await db.select().from(schema.person).where(eq(schema.person.id, id));
@@ -141,6 +141,10 @@ describe.skipIf(!url)("manual-lead-entry: pipeline (integration)", () => {
     expect(p.signalId).toBeNull();
     expect(p.name).toBe("Alice");
     expect(p.status).toBe("new");
+    // Manual entry no longer auto-scores (ADR-0019): no Scoring exists until the user re-scores.
+    expect(
+      await db.select().from(schema.scorings).where(eq(schema.scorings.personId, id)),
+    ).toHaveLength(0);
 
     const result = await qualify.qualifyProspect(id, { llm: scorer(4) });
     expect(result.qualifiedProspectIds).toEqual([id]);
@@ -149,15 +153,18 @@ describe.skipIf(!url)("manual-lead-entry: pipeline (integration)", () => {
     const ss = await db.select().from(schema.scorings).where(eq(schema.scorings.personId, id));
     expect(ss).toHaveLength(1);
     expect(ss[0].score).toBe(4);
+    expect(ss[0].provenance).toBe("llm");
   });
 
-  it("re-qualifying an already-scored prospect does not double-score", async () => {
+  it("re-score is additive, newest-row-wins (no scored-already guard, ADR-0019)", async () => {
     const id = await manual.addManualLead({ name: "Bob" });
     await qualify.qualifyProspect(id, { llm: scorer(4) });
     const again = await qualify.qualifyProspect(id, { llm: scorer(5) });
-    expect(again.skipped).toBe(true);
+    expect(again.skipped).toBe(false);
+    // Both Scorings coexist (additive); the read elsewhere takes the latest by scored_at.
     const ss = await getDb().select().from(schema.scorings).where(eq(schema.scorings.personId, id));
-    expect(ss).toHaveLength(1);
+    expect(ss).toHaveLength(2);
+    expect(ss.every((s) => s.provenance === "llm")).toBe(true);
   });
 
   it("the origin CHECK forbids a signal-origin row with no signal and a manual row with no name", async () => {

@@ -66,6 +66,17 @@ export async function work<T>(
   return getBoss().work<T>(queue, handler);
 }
 
+// Delete a pg-boss queue. Best-effort by contract (ADR-0019 one-time cleanup of the orphaned
+// `draft`/`qualify-prospect` queues): a missing queue is a no-op for the caller, so failures are
+// swallowed and logged rather than crashing bootstrap.
+export async function deleteQueue(queue: string): Promise<void> {
+  try {
+    await getBoss().deleteQueue(queue);
+  } catch (err) {
+    logger.warn({ err, queue }, "deleteQueue failed (queue may not exist)");
+  }
+}
+
 // Read-only job-activity introspection (job-activity-monitor). Thin pg-boss I/O only; the pure
 // raw -> DTO mapping lives in ./activity-map (the testable half). Composed from cheap sources only -
 // never an unfiltered findJobs (no SQL LIMIT; it would page the once-a-minute heartbeat queue's

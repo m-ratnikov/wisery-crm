@@ -10,12 +10,12 @@ import {
   generateCommentAction,
   markCommentPostedAction,
   monitorAction,
-  regenerateDraftAction,
+  reScoreAction,
 } from "../actions";
 
-// Person detail (prospect-list): score reasoning, the selected draft, and the dossier
-// (ADR-0008: enriched/drafted are the related rows, shown here). Enrich and regenerate act
-// on this prospect. Server Component; params is async in Next 16.
+// Person detail (prospect-list): score reasoning and the dossier (ADR-0008: enriched is a related
+// row, shown here). Enrich and re-score act on this person on demand (ADR-0019). Server Component;
+// params is async in Next 16.
 export default async function ProspectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const detail = await getProspectDetail(id);
@@ -48,13 +48,13 @@ export default async function ProspectDetailPage({ params }: { params: Promise<{
                 Enrich
               </button>
             </form>
-            <form action={regenerateDraftAction}>
+            <form action={reScoreAction}>
               <input type="hidden" name="id" value={detail.id} />
               <button
                 type="submit"
                 className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
               >
-                Regenerate draft
+                Re-score
               </button>
             </form>
             <form action={fetchPostsAction}>
@@ -84,16 +84,6 @@ export default async function ProspectDetailPage({ params }: { params: Promise<{
             {detail.reason ?? "Not scored yet."}
           </p>
           {detail.summary ? <p className="mt-2 text-xs text-zinc-500">{detail.summary}</p> : null}
-        </Section>
-
-        <Section title="Selected draft">
-          {detail.draft ? (
-            <p className="whitespace-pre-wrap text-sm leading-6 text-zinc-700 dark:text-zinc-300">
-              {detail.draft}
-            </p>
-          ) : (
-            <p className="text-sm text-zinc-500">No draft yet.</p>
-          )}
         </Section>
 
         <Section title="Dossier">

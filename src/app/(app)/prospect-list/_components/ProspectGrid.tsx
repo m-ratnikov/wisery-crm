@@ -6,8 +6,7 @@ import {
   addLeadAction,
   batchEnrichAction,
   enrichAction,
-  regenerateDraftAction,
-  reQualifyAction,
+  reScoreAction,
   setAutoEnrichAction,
 } from "../actions";
 
@@ -20,13 +19,12 @@ export interface GridItem {
   summary: string | null;
   sourceKind: string;
   enriched: boolean;
-  drafted: boolean;
 }
 
 const inputClass =
   "w-full rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm outline-none focus:border-zinc-400 dark:border-zinc-700 dark:bg-zinc-950";
 
-const STATUSES = ["new", "below_bar", "qualified", "queued", "acted", "dismissed", "closed"];
+const STATUSES = ["new", "below_bar", "qualified"];
 
 // Anchor view #3: the browse/manage grid. Client component for filtering, multi-select, and
 // the batch/auto-enrich gestures; each mutation is a Server-Action form. enriched/drafted are
@@ -116,8 +114,8 @@ export function ProspectGrid({ items, autoEnrich }: { items: GridItem[]; autoEnr
           className="grid gap-3 rounded-lg border border-zinc-200 bg-white p-4 sm:grid-cols-2 dark:border-zinc-800 dark:bg-zinc-900"
         >
           <p className="text-xs text-zinc-500 sm:col-span-2">
-            Add a known person by hand. They are scored against your ICP like any prospect (no
-            signal needed).
+            Add a known person by hand. They start unscored - use Re-score to assess them against
+            your ICP (no signal needed).
           </p>
           <input name="name" required placeholder="Name (required)" className={inputClass} />
           <input name="headline" placeholder="Headline / title" className={inputClass} />
@@ -128,7 +126,7 @@ export function ProspectGrid({ items, autoEnrich }: { items: GridItem[]; autoEnr
               type="submit"
               className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
             >
-              Add &amp; qualify
+              Add lead
             </button>
           </div>
         </form>
@@ -167,8 +165,7 @@ export function ProspectGrid({ items, autoEnrich }: { items: GridItem[]; autoEnr
               <td className="py-2">{i.status}</td>
               <td className="py-2 text-zinc-500">{i.sourceKind}</td>
               <td className="py-2 text-xs">
-                {i.enriched ? <span className="mr-1 text-emerald-600">enriched</span> : null}
-                {i.drafted ? <span className="text-blue-600">drafted</span> : null}
+                {i.enriched ? <span className="text-emerald-600">enriched</span> : null}
               </td>
               <td className="py-2">
                 <div className="flex gap-2">
@@ -181,27 +178,17 @@ export function ProspectGrid({ items, autoEnrich }: { items: GridItem[]; autoEnr
                       Enrich
                     </button>
                   </form>
-                  <form action={regenerateDraftAction}>
+                  {/* On-demand re-score (ADR-0019): assess an unscored person, or refresh an
+                      advisory-seeded score with a real LLM pass. */}
+                  <form action={reScoreAction}>
                     <input type="hidden" name="id" value={i.id} />
                     <button
                       type="submit"
                       className="text-xs text-zinc-600 hover:text-zinc-900 dark:text-zinc-400"
                     >
-                      Regenerate
+                      Re-score
                     </button>
                   </form>
-                  {/* Recover a manual lead whose fire-and-forget qualify enqueue failed (ADR-0010). */}
-                  {i.origin === "manual" && i.score === null ? (
-                    <form action={reQualifyAction}>
-                      <input type="hidden" name="id" value={i.id} />
-                      <button
-                        type="submit"
-                        className="text-xs text-zinc-600 hover:text-zinc-900 dark:text-zinc-400"
-                      >
-                        Re-qualify
-                      </button>
-                    </form>
-                  ) : null}
                 </div>
               </td>
             </tr>
