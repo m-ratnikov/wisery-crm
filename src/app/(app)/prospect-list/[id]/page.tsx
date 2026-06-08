@@ -1,14 +1,18 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { type CommentRow, listCommentsForPost } from "@/lib/comments/read";
+import { type MessageRow, listMessagesForPerson } from "@/lib/messages/read";
 import { type FeedPost, listPostsForPerson } from "@/lib/posts/read";
 import { getProspectDetail } from "@/lib/prospect/read";
 import {
   dismissCommentAction,
+  dismissMessageAction,
   enrichAction,
   fetchPostsAction,
   generateCommentAction,
+  generateMessageAction,
   markCommentPostedAction,
+  markMessageSentAction,
   monitorAction,
   reScoreAction,
 } from "../actions";
@@ -24,6 +28,7 @@ export default async function ProspectDetailPage({ params }: { params: Promise<{
   const postsWithComments = await Promise.all(
     personPosts.map(async (post) => ({ post, comments: await listCommentsForPost(post.id) })),
   );
+  const personMessages = await listMessagesForPerson(id);
 
   return (
     <div className="flex flex-1 flex-col bg-zinc-50 dark:bg-zinc-950">
@@ -109,8 +114,73 @@ export default async function ProspectDetailPage({ params }: { params: Promise<{
             </ul>
           )}
         </Section>
+
+        <Section title={`Messages (${personMessages.length})`}>
+          <MessagesSection personId={detail.id} messages={personMessages} />
+        </Section>
       </div>
     </div>
+  );
+}
+
+// LinkedIn message generation + history (engagement-rework, ADR-0021). Keyed to the PERSON and
+// typed (connection_request | message). Each generate is synchronous and writes a new row; the
+// human sends it on LinkedIn by hand, then marks it sent (D2) - mirrors the comment card.
+function MessagesSection({ personId, messages }: { personId: string; messages: MessageRow[] }) {
+  return (
+    <>
+      <div className="flex gap-2">
+        <form action={generateMessageAction}>
+          <input type="hidden" name="personId" value={personId} />
+          <input type="hidden" name="type" value="connection_request" />
+          <button
+            type="submit"
+            className="rounded-md border border-zinc-200 px-3 py-1.5 text-sm dark:border-zinc-700"
+          >
+            Draft a connection request
+          </button>
+        </form>
+        <form action={generateMessageAction}>
+          <input type="hidden" name="personId" value={personId} />
+          <input type="hidden" name="type" value="message" />
+          <button
+            type="submit"
+            className="rounded-md border border-zinc-200 px-3 py-1.5 text-sm dark:border-zinc-700"
+          >
+            Draft a message
+          </button>
+        </form>
+      </div>
+      {messages.length === 0 ? (
+        <p className="mt-3 text-sm text-zinc-500">
+          No messages yet. Draft a connection request or a message to start the conversation.
+        </p>
+      ) : (
+        <ul className="mt-3 space-y-2">
+          {messages.map((m) => (
+            <li key={m.id} className="rounded-md bg-zinc-50 p-2 dark:bg-zinc-950">
+              <span className="text-[10px] uppercase text-zinc-400">{m.type}</span>
+              <p className="mt-1 text-xs leading-5 whitespace-pre-wrap text-zinc-700 dark:text-zinc-300">
+                {m.body}
+              </p>
+              <div className="mt-1 flex items-center gap-2">
+                <span className="text-[10px] uppercase text-zinc-400">{m.status}</span>
+                {m.status === "generated" ? (
+                  <GeneratedActions
+                    idName="messageId"
+                    idValue={m.id}
+                    personId={personId}
+                    markAction={markMessageSentAction}
+                    markLabel="I sent it (mark sent)"
+                    dismissAction={dismissMessageAction}
+                  />
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
   );
 }
 
@@ -156,25 +226,14 @@ function PostCard({
               <div className="mt-1 flex items-center gap-2">
                 <span className="text-[10px] uppercase text-zinc-400">{c.status}</span>
                 {c.status === "generated" ? (
-                  <>
-                    <form action={markCommentPostedAction}>
-                      <input type="hidden" name="commentId" value={c.id} />
-                      <input type="hidden" name="personId" value={personId} />
-                      <button
-                        type="submit"
-                        className="text-[11px] font-medium text-zinc-700 hover:underline dark:text-zinc-300"
-                      >
-                        I posted it (mark posted)
-                      </button>
-                    </form>
-                    <form action={dismissCommentAction}>
-                      <input type="hidden" name="commentId" value={c.id} />
-                      <input type="hidden" name="personId" value={personId} />
-                      <button type="submit" className="text-[11px] text-zinc-500 hover:underline">
-                        Dismiss
-                      </button>
-                    </form>
-                  </>
+                  <GeneratedActions
+                    idName="commentId"
+                    idValue={c.id}
+                    personId={personId}
+                    markAction={markCommentPostedAction}
+                    markLabel="I posted it (mark posted)"
+                    dismissAction={dismissCommentAction}
+                  />
                 ) : null}
               </div>
             </li>
@@ -182,6 +241,48 @@ function PostCard({
         </ul>
       ) : null}
     </li>
+  );
+}
+
+// The generated-state action row shared by the comment and message cards (ADR-0018/0021): a
+// human-marks-done form (it was posted / sent) plus a Dismiss form, each posting the artifact id and
+// personId so the action revalidates the person route. `idName` is the form field the action reads
+// (commentId | messageId); `markLabel` is the only copy that differs between the two artifacts.
+function GeneratedActions({
+  idName,
+  idValue,
+  personId,
+  markAction,
+  markLabel,
+  dismissAction,
+}: {
+  idName: string;
+  idValue: string;
+  personId: string;
+  markAction: (formData: FormData) => void | Promise<void>;
+  markLabel: string;
+  dismissAction: (formData: FormData) => void | Promise<void>;
+}) {
+  return (
+    <>
+      <form action={markAction}>
+        <input type="hidden" name={idName} value={idValue} />
+        <input type="hidden" name="personId" value={personId} />
+        <button
+          type="submit"
+          className="text-[11px] font-medium text-zinc-700 hover:underline dark:text-zinc-300"
+        >
+          {markLabel}
+        </button>
+      </form>
+      <form action={dismissAction}>
+        <input type="hidden" name={idName} value={idValue} />
+        <input type="hidden" name="personId" value={personId} />
+        <button type="submit" className="text-[11px] text-zinc-500 hover:underline">
+          Dismiss
+        </button>
+      </form>
+    </>
   );
 }
 

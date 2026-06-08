@@ -477,6 +477,30 @@ export const comments = pgTable(
   (t) => [index("comments_post_idx").on(t.postId), index("comments_person_idx").on(t.personId)],
 );
 
+// An AI-generated LinkedIn message attached to a Person (engagement-rework, ADR-0021), human-sent
+// (D2). A SIBLING of comments: keyed to the PERSON (not a post) and carrying a `type`
+// (connection_request | message) that drives generation and shows in the person's message history.
+// A SEPARATE table from comments because the business rule differs (per-person + typed vs per-post).
+// `status` is text+Zod (generated | sent | dismissed); records provider/prompt/model for evals like
+// a comment. Each generate writes a NEW row (no one-active constraint).
+export const messages = pgTable(
+  "messages",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    personId: uuid("person_id")
+      .notNull()
+      .references(() => person.id, { onDelete: "restrict" }),
+    type: text("type").notNull(),
+    body: text("body").notNull(),
+    status: text("status").notNull().default("generated"),
+    ...llmCols(),
+    createdAt: createdAt(),
+  },
+  (t) => [index("messages_person_idx").on(t.personId)],
+);
+
 // The global comment guidance (engagement-comments, ADR-0018): tone and rules for comment
 // generation, config-as-data (a peer of Rubric and User Profile). Edits are additive new versions;
 // a single active row (partial unique index over the active rows).

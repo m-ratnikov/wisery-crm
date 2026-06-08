@@ -127,6 +127,13 @@
       "when": 1780914583521,
       "tag": "0017_fluffy_blob",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1780916298391,
+      "tag": "0018_handy_abomination",
+      "breakpoints": true
     }
   ]
 }

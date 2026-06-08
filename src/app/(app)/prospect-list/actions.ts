@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { generateComment } from "@/lib/comments/generate";
 import { dismissComment, markCommentPosted } from "@/lib/comments/read";
+import { generateMessage } from "@/lib/messages/generate";
+import { dismissMessage, markMessageSent } from "@/lib/messages/read";
 import { enqueueEnrich, enqueueEnrichForProspects } from "@/lib/enrich/enrich-queue";
 import { setAutoEnrich } from "@/lib/enrich/settings";
 import { setMonitored } from "@/lib/posts/pipeline";
@@ -103,5 +105,25 @@ export async function markCommentPostedAction(formData: FormData): Promise<void>
 
 export async function dismissCommentAction(formData: FormData): Promise<void> {
   await dismissComment(field(formData, "commentId"));
+  revalidatePath(`${ROUTE}/${field(formData, "personId")}`);
+}
+
+// Messages (engagement-rework, ADR-0021). Generation is a SYNCHRONOUS server action (not a queue
+// job): the user picks a type (connection_request | message), waits, and gets a draft; each call
+// writes a new Message row. The human sends it on LinkedIn by hand, then marks it sent (D2) - the
+// system never auto-sends. generateMessage validates the type and throws on a bad value.
+export async function generateMessageAction(formData: FormData): Promise<void> {
+  const personId = field(formData, "personId");
+  await generateMessage(personId, field(formData, "type"));
+  revalidatePath(`${ROUTE}/${personId}`);
+}
+
+export async function markMessageSentAction(formData: FormData): Promise<void> {
+  await markMessageSent(field(formData, "messageId"));
+  revalidatePath(`${ROUTE}/${field(formData, "personId")}`);
+}
+
+export async function dismissMessageAction(formData: FormData): Promise<void> {
+  await dismissMessage(field(formData, "messageId"));
   revalidatePath(`${ROUTE}/${field(formData, "personId")}`);
 }
