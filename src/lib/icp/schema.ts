@@ -32,6 +32,11 @@ export type RubricCriteria = z.infer<typeof rubricCriteriaSchema>;
 export const rubricKindSchema = z.enum(["icp", "peer", "company"]);
 export type RubricKind = z.infer<typeof rubricKindSchema>;
 
+// The buyer rubric kind - the single authority for the value the qualification read filters on
+// (ADR-0019: qualification is the latest icp-rubric Scoring). One source so the load-bearing literal
+// is not copy-pasted across the qualify reads.
+export const BUYER_RUBRIC_KIND: RubricKind = rubricKindSchema.enum.icp;
+
 export const caseStudySchema = z.object({
   title: z.string(),
   result: z.string(),

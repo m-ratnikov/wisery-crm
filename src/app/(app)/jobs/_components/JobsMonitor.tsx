@@ -14,12 +14,15 @@ import type { ScanHistorySnapshot, ScanRunView } from "@/lib/signals/scan-histor
 // initialData (no loading flash) and polls the read endpoint, pausing while the tab is hidden.
 const POLL_MS = 3500;
 
+// The currently-registered background queues (bootstrap.ts). Scoring and message generation are now
+// synchronous on-demand Person actions, not workers (ADR-0019), so qualify / qualify-prospect / draft
+// are gone; an unknown name falls back to its raw name.
 const QUEUE_LABELS: Record<string, string> = {
   "source-scan": "Source scan",
-  qualify: "Qualify",
-  "qualify-prospect": "Qualify (manual lead)",
+  "advisory-filter": "Advisory filter",
   enrich: "Enrich",
-  draft: "Draft",
+  "fetch-posts": "Fetch posts",
+  "activity-scan": "Activity scan",
   heartbeat: "Heartbeat",
 };
 const queueLabel = (name: string) => QUEUE_LABELS[name] ?? name;
@@ -27,10 +30,10 @@ const queueLabel = (name: string) => QUEUE_LABELS[name] ?? name;
 // A plain one-line description of what each queue does, so a non-engineer can read the monitor.
 const QUEUE_DESCRIPTIONS: Record<string, string> = {
   "source-scan": "Discovers new signals from your connected sources.",
-  qualify: "Scores a discovered person against your ICP rubric.",
-  "qualify-prospect": "Scores a manually added lead against your ICP rubric.",
+  "advisory-filter": "Scores each new signal against its rubric for the Queue's advisory hint.",
   enrich: "Builds a deep research dossier for a prospect.",
-  draft: "Writes a personalized first-touch message for a prospect.",
+  "fetch-posts": "Fetches a monitored person's latest posts for the Feed.",
+  "activity-scan": "Sweeps monitored people on a schedule to fetch new posts.",
   heartbeat: "Internal liveness check that proves the worker is running.",
 };
 const queueDescription = (name: string) => QUEUE_DESCRIPTIONS[name] ?? "";

@@ -2,6 +2,8 @@ import "server-only";
 import { eq } from "drizzle-orm";
 import { type Db, type DbTx, getDb } from "@/lib/db";
 import { person, scorings, signals } from "@/lib/db/schema";
+import { getActiveRubric } from "@/lib/icp/config";
+import { BUYER_RUBRIC_KIND } from "@/lib/icp/schema";
 import type { LLMProvider } from "@/lib/llm/provider";
 import { getEntryStatus } from "@/lib/pipeline/config";
 import { personSubject } from "@/lib/prospect/identity";
@@ -117,13 +119,21 @@ export async function qualifyProspect(
     return { personId, prospectsCreated: 0, skipped: true, qualifiedProspectIds: [] };
   }
 
+  // Skip (do not throw) when no buyer rubric is configured yet: an unassessed prospect created
+  // before the operator set up an ICP rubric would otherwise have its only outbound action (re-score)
+  // 500 from scoreProspect, stranding it. Skipping keeps the person `unassessed` and recoverable once
+  // a rubric exists, mirroring the peer skip above.
+  if (!(await getActiveRubric(BUYER_RUBRIC_KIND))) {
+    return { personId, prospectsCreated: 0, skipped: true, qualifiedProspectIds: [] };
+  }
+
   const [signal] = prospect.signalId
     ? await db.select().from(signals).where(eq(signals.id, prospect.signalId)).limit(1)
     : [null];
   // A prospect is scored against the buyer (ICP) rubric (ADR-0017).
   const scored = await scoreProspect(personSubject(prospect, signal ?? null), {
     ...opts,
-    rubricKind: "icp",
+    rubricKind: BUYER_RUBRIC_KIND,
   });
 
   // Re-score writes only the fresh `llm` Scoring; it does NOT touch the pipeline position

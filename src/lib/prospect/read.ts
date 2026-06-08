@@ -2,7 +2,7 @@ import "server-only";
 import { desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { dossiers, person, pipelineStatus, scorings, signals, sources } from "@/lib/db/schema";
-import { qualificationForMany } from "@/lib/qualify/read";
+import { latestIcpScorings, qualificationForMany } from "@/lib/qualify/read";
 import type { Qualification } from "@/lib/qualify/status";
 
 // The prospect-list read-model (prospect-list D-A/D-B): one row per prospect with its pipeline
@@ -89,11 +89,11 @@ export async function listProspects(): Promise<ProspectListItem[]> {
     .leftJoin(sources, eq(sources.id, signals.sourceId))
     .orderBy(desc(person.createdAt));
 
-  // Latest scoring per prospect (newest first; first seen wins).
-  const scoreRows = await db
-    .select({ personId: scorings.personId, score: scorings.score, summary: scorings.summary })
-    .from(scorings)
-    .orderBy(desc(scorings.scoredAt), desc(scorings.id));
+  // Latest icp-rubric scoring per prospect (newest first; first seen wins), via the shared
+  // buyer-rubric-filtered query so the displayed score is the same Scoring that drives the
+  // qualification badge - a peer-rubric or advisory non-icp row never shows a score next to an
+  // `unassessed` qualification (ADR-0019: every score/qualification read filters by rubric kind).
+  const scoreRows = await latestIcpScorings();
   const latestScore = new Map<string, { score: number; summary: string | null }>();
   for (const r of scoreRows) {
     if (!latestScore.has(r.personId))
@@ -140,12 +140,7 @@ export async function getProspectDetail(personId: string): Promise<ProspectDetai
   const [p] = await prospectsWithSignal().where(eq(person.id, personId)).limit(1);
   if (!p) return null;
 
-  const [sc] = await db
-    .select({ score: scorings.score, reason: scorings.reason, summary: scorings.summary })
-    .from(scorings)
-    .where(eq(scorings.personId, personId))
-    .orderBy(desc(scorings.scoredAt), desc(scorings.id))
-    .limit(1);
+  const [sc] = await latestIcpScorings(eq(scorings.personId, personId)).limit(1);
   const [dos] = await db
     .select({ data: dossiers.data })
     .from(dossiers)

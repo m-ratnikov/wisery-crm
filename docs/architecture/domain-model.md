@@ -125,8 +125,7 @@ erDiagram
         uuid id PK
         uuid pipeline_id FK
         text name "e.g. Cold, CR Sent"
-        integer position "ordered column index"
-        boolean is_entry "the status a new person enters at"
+        integer position "ordered column index; position 0 is the entry status"
         timestamptz created_at
         timestamptz updated_at
     }

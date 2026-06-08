@@ -1,27 +1,40 @@
 import "server-only";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray, type SQL } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { rubric, scorings } from "@/lib/db/schema";
+import { BUYER_RUBRIC_KIND } from "@/lib/icp/schema";
 import { gateStatus, type Qualification } from "@/lib/qualify/status";
 
 // The qualification read (ADR-0019/0020): qualification is derived from the latest icp-rubric
-// Scoring, not stored on the Person. The "latest icp Scoring" is the newest scoring whose rubric
-// has kind = 'icp' (scored_at desc, id desc as the tiebreak - same ordering the prospect read uses).
+// Scoring, not stored on the Person. The single authoritative "latest icp-rubric Scoring" query
+// (newest by scored_at, id-tiebreak) lives in `latestIcpScorings` so the qualification reads AND the
+// prospect-list score-display reads all key on the same buyer-rubric-filtered shape - an `advisory`
+// non-icp or peer-rubric row never satisfies a buyer qualification or shows as a buyer score.
 // A person with no icp Scoring is `unassessed`; otherwise gateStatus maps its score (>= 3) to
-// qualified / below_bar. Reuses gateStatus so the >= 3 boundary lives in exactly one place.
+// qualified / below_bar. gateStatus keeps the >= 3 boundary in exactly one place.
+
+// rows are ordered newest-first; the caller takes the first per person as the latest.
+export function latestIcpScorings(where?: SQL) {
+  const kind = eq(rubric.kind, BUYER_RUBRIC_KIND);
+  return getDb()
+    .select({
+      personId: scorings.personId,
+      score: scorings.score,
+      reason: scorings.reason,
+      summary: scorings.summary,
+    })
+    .from(scorings)
+    .innerJoin(rubric, eq(rubric.id, scorings.rubricId))
+    .where(where ? and(where, kind) : kind)
+    .orderBy(desc(scorings.scoredAt), desc(scorings.id));
+}
 
 function qualify(score: number | undefined): Qualification {
   return score === undefined ? "unassessed" : gateStatus(score);
 }
 
 export async function qualificationFor(personId: string): Promise<Qualification> {
-  const [row] = await getDb()
-    .select({ score: scorings.score })
-    .from(scorings)
-    .innerJoin(rubric, eq(rubric.id, scorings.rubricId))
-    .where(and(eq(scorings.personId, personId), eq(rubric.kind, "icp")))
-    .orderBy(desc(scorings.scoredAt), desc(scorings.id))
-    .limit(1);
+  const [row] = await latestIcpScorings(eq(scorings.personId, personId)).limit(1);
   return qualify(row?.score);
 }
 
@@ -33,13 +46,7 @@ export async function qualificationForMany(
   const result = new Map<string, Qualification>();
   if (personIds.length === 0) return result;
 
-  const rows = await getDb()
-    .select({ personId: scorings.personId, score: scorings.score })
-    .from(scorings)
-    .innerJoin(rubric, eq(rubric.id, scorings.rubricId))
-    .where(and(inArray(scorings.personId, personIds), eq(rubric.kind, "icp")))
-    .orderBy(desc(scorings.scoredAt), desc(scorings.id));
-
+  const rows = await latestIcpScorings(inArray(scorings.personId, personIds));
   // Newest icp scoring per person wins (rows are ordered newest-first; first seen per person).
   const latest = new Map<string, number>();
   for (const r of rows) {
