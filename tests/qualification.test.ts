@@ -36,6 +36,7 @@ describe.skipIf(!url)("qualification: qualify pipeline (integration)", () => {
   let signalsPipeline: typeof import("@/lib/signals/pipeline");
   let sources: typeof import("@/lib/signals/sources");
   let qualify: typeof import("@/lib/qualify/pipeline");
+  let qualifyRead: typeof import("@/lib/qualify/read");
   let fake: typeof import("@/lib/llm/fake");
 
   const criteria = {
@@ -76,6 +77,7 @@ describe.skipIf(!url)("qualification: qualify pipeline (integration)", () => {
     signalsPipeline = await import("@/lib/signals/pipeline");
     sources = await import("@/lib/signals/sources");
     qualify = await import("@/lib/qualify/pipeline");
+    qualifyRead = await import("@/lib/qualify/read");
     fake = await import("@/lib/llm/fake");
     await truncateAll();
     await icp.saveRubric({ name: "test rubric", criteria });
@@ -111,13 +113,23 @@ describe.skipIf(!url)("qualification: qualify pipeline (integration)", () => {
     expect(ss[0].rubricId).toBe(active?.id);
   });
 
-  it("gates a 4 to qualified and a 2 and -1 to below_bar", async () => {
+  it("places every new prospect at the entry status and derives qualification from the read", async () => {
     const db = getDb();
 
     const qualified = await persistOneSignal();
     await qualify.qualifySignal(qualified, { llm: scorer(4) });
-    const [p4] = await db.select().from(schema.person).where(eq(schema.person.signalId, qualified));
-    expect(p4.status).toBe("qualified");
+    const [p4] = await db
+      .select({ id: schema.person.id, statusId: schema.person.statusId })
+      .from(schema.person)
+      .where(eq(schema.person.signalId, qualified));
+    // The prospect is born at the default pipeline's entry status ('Cold'), not a qualification value
+    // (ADR-0020); qualification is the read over its Scoring.
+    const [entry] = await db
+      .select({ name: schema.pipelineStatus.name })
+      .from(schema.pipelineStatus)
+      .where(eq(schema.pipelineStatus.id, p4.statusId));
+    expect(entry.name).toBe("Cold");
+    expect(await qualifyRead.qualificationFor(p4.id)).toBe("qualified");
 
     // A different scan/source yields a distinct signal to score below the bar.
     await truncateAll();
@@ -125,14 +137,14 @@ describe.skipIf(!url)("qualification: qualify pipeline (integration)", () => {
     const low = await persistOneSignal();
     await qualify.qualifySignal(low, { llm: scorer(2) });
     const [p2] = await db.select().from(schema.person).where(eq(schema.person.signalId, low));
-    expect(p2.status).toBe("below_bar");
+    expect(await qualifyRead.qualificationFor(p2.id)).toBe("below_bar");
 
     await truncateAll();
     await icp.saveRubric({ name: "test rubric", criteria });
     const thin = await persistOneSignal();
     await qualify.qualifySignal(thin, { llm: scorer(-1) });
     const [pNeg] = await db.select().from(schema.person).where(eq(schema.person.signalId, thin));
-    expect(pNeg.status).toBe("below_bar");
+    expect(await qualifyRead.qualificationFor(pNeg.id)).toBe("below_bar");
   });
 
   it("is idempotent: re-qualifying the same signal creates no second prospect", async () => {

@@ -98,11 +98,15 @@ describe.skipIf(!url)("prospect-list: read-model (integration)", () => {
     expect(fullItem?.score).toBe(4);
     expect(fullItem?.sourceKind).toBe("fixture");
     expect(fullItem?.enriched).toBe(true);
-    expect(fullItem?.status).toBe("qualified");
+    // status is the pipeline position ('Cold', the entry status) now, distinct from qualification,
+    // which is the derived read over the score (ADR-0019/0020).
+    expect(fullItem?.status).toBe("Cold");
+    expect(fullItem?.qualification).toBe("qualified");
 
     const bareItem = byId.get(bare);
     expect(bareItem?.enriched).toBe(false);
-    expect(bareItem?.status).toBe("qualified");
+    expect(bareItem?.status).toBe("Cold");
+    expect(bareItem?.qualification).toBe("qualified");
   });
 
   it("returns a prospect's detail with its latest scoring and dossier", async () => {
@@ -113,6 +117,8 @@ describe.skipIf(!url)("prospect-list: read-model (integration)", () => {
     expect(detail?.score).toBe(5);
     expect(detail?.reason).toMatch(/bar/i);
     expect(detail?.dossier).toEqual({ headline: "VP Eng, Series A" });
+    expect(detail?.status).toBe("Cold");
+    expect(detail?.qualification).toBe("qualified");
   });
 
   it("returns null detail for an unknown prospect", async () => {

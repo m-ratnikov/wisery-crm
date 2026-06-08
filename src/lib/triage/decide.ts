@@ -12,8 +12,8 @@ import {
 } from "@/lib/db/schema";
 import { getActiveRubric } from "@/lib/icp/config";
 import { rubricKindSchema } from "@/lib/icp/schema";
+import { getEntryStatus } from "@/lib/pipeline/config";
 import { dedupKeyFor } from "@/lib/posts/dedup";
-import { gateStatus } from "@/lib/qualify/status";
 import { loadSignalById } from "@/lib/signals/load";
 
 // The triage verdict vocabulary (ADR-0014): text + Zod - the column has no DB enum.
@@ -79,12 +79,12 @@ export async function approveSignal(signalId: string): Promise<ApproveOutcome> {
   // (safeParse, not parse) so a data-drift kind can never throw and abort the approval.
   const advisoryKind = advisory ? rubricKindSchema.safeParse(advisory.rubricKind) : undefined;
   const promotionRubric = advisoryKind?.success ? await getActiveRubric(advisoryKind.data) : null;
-  // When the advisory is promoted, derive the person's disposition from its score the same way a
-  // re-score does (gateStatus), so a qualifying approved person is actionable (enrichable) without
-  // a second LLM pass; absent a promotable advisory the person stays `new` (unassessed). Slice 2
-  // replaces this text status with the configurable pipeline FK.
   const promotes = signal.kind !== "company" && advisory != null && promotionRubric != null;
-  const initialStatus = promotes ? gateStatus(advisory.score ?? -1) : "new";
+  // Every newly created Person enters the default pipeline at its entry status (ADR-0020); the
+  // pipeline position is orthogonal to qualification, which is now the read over the promoted
+  // Scoring, not a status. Resolved before the tx so the write stays connection-cheap (ADR-0009).
+  // A company creates no Person, so it needs no entry status.
+  const entry = signal.kind === "company" ? null : await getEntryStatus();
 
   const createdEntityId = await db.transaction(async (tx) => {
     let primaryId: string;
@@ -98,11 +98,21 @@ export async function approveSignal(signalId: string): Promise<ApproveOutcome> {
         .values({ signalId, name })
         .returning({ id: companies.id });
       primaryId = c.id;
+    } else if (entry === null) {
+      // Unreachable: entry is resolved for every non-company kind above. Narrows `entry` to non-null
+      // for the Person inserts below without a non-null assertion.
+      throw new Error("entry status unexpectedly missing for a person/content signal");
     } else if (signal.kind === "content") {
       // The post's author becomes a peer; the signal's content becomes a Post attached to them.
       const [p] = await tx
         .insert(person)
-        .values({ type: "peer", origin: "signal", signalId, status: initialStatus })
+        .values({
+          type: "peer",
+          origin: "signal",
+          signalId,
+          pipelineId: entry.pipelineId,
+          statusId: entry.statusId,
+        })
         .returning({ id: person.id });
       primaryId = p.id;
       const externalUrl =
@@ -122,7 +132,13 @@ export async function approveSignal(signalId: string): Promise<ApproveOutcome> {
       // person (and job, pragmatically): create a prospect.
       const [p] = await tx
         .insert(person)
-        .values({ type: "prospect", origin: "signal", signalId, status: initialStatus })
+        .values({
+          type: "prospect",
+          origin: "signal",
+          signalId,
+          pipelineId: entry.pipelineId,
+          statusId: entry.statusId,
+        })
         .returning({ id: person.id });
       primaryId = p.id;
     }

@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
+import { entryStatus } from "./helpers/entry-status";
 
 // --- Integration: comment guidance + synchronous generation + lifecycle (fake LLM, no network) ---
 
@@ -25,7 +26,7 @@ describe.skipIf(!url)("engagement-comments (integration)", () => {
   async function makePost(): Promise<string> {
     const [p] = await getDb()
       .insert(schema.person)
-      .values({ origin: "manual", name: "Pat", status: "new" })
+      .values({ origin: "manual", name: "Pat", ...(await entryStatus()) })
       .returning({ id: schema.person.id });
     const [post] = await getDb()
       .insert(schema.posts)

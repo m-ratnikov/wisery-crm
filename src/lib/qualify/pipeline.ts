@@ -1,8 +1,9 @@
 import "server-only";
 import { eq } from "drizzle-orm";
-import { getDb, type DbTx } from "@/lib/db";
+import { type Db, type DbTx, getDb } from "@/lib/db";
 import { person, scorings, signals } from "@/lib/db/schema";
 import type { LLMProvider } from "@/lib/llm/provider";
+import { getEntryStatus } from "@/lib/pipeline/config";
 import { personSubject } from "@/lib/prospect/identity";
 import { loadProspectById } from "@/lib/prospect/load";
 import { type ScoredProspect, scoreProspect } from "@/lib/qualify/scorer";
@@ -19,17 +20,19 @@ export interface QualifyResult {
   personId?: string;
   prospectsCreated: number;
   skipped: boolean;
-  // Ids of person this run left `qualified` (>= 3).
+  // Ids of person this run scored at or above the bar (>= 3). Qualification is now a derived read
+  // (ADR-0019/0020), not a stored status; this is the just-computed score, surfaced for the caller.
   qualifiedProspectIds: string[];
 }
 
-// Shared tail: write the `llm`-provenance Scoring row for a prospect that already exists in `tx`.
+// Shared tail: write the `llm`-provenance Scoring row for a prospect. Takes `Db | DbTx` so the
+// discovered path runs it inside its prospect-insert transaction and re-score runs it standalone.
 async function persistScore(
-  tx: DbTx,
+  db: Db | DbTx,
   args: { personId: string; scored: ScoredProspect },
 ): Promise<void> {
   const { personId, scored } = args;
-  await tx.insert(scorings).values({
+  await db.insert(scorings).values({
     personId,
     rubricId: scored.rubricId,
     score: scored.result.score,
@@ -68,12 +71,19 @@ export async function qualifySignal(
   // normalize-expand stage. Score outside the transaction (no network inside a tx). A
   // SignalRow satisfies PersonSubject structurally, so the discovered prompt is unchanged.
   const scored = await scoreProspect(signal, opts);
-  const status = gateStatus(scored.result.score);
+  // The prospect enters the default pipeline at its entry status (ADR-0020); qualification is the
+  // read over the Scoring just written, not a status. Resolve the entry before the tx (ADR-0009).
+  const entry = await getEntryStatus();
 
   const personId = await db.transaction(async (tx) => {
     const [prospect] = await tx
       .insert(person)
-      .values({ origin: "signal", signalId, status })
+      .values({
+        origin: "signal",
+        signalId,
+        pipelineId: entry.pipelineId,
+        statusId: entry.statusId,
+      })
       .returning({ id: person.id });
     await persistScore(tx, { personId: prospect.id, scored });
     return prospect.id;
@@ -83,7 +93,7 @@ export async function qualifySignal(
     signalId,
     prospectsCreated: 1,
     skipped: false,
-    qualifiedProspectIds: status === "qualified" ? [personId] : [],
+    qualifiedProspectIds: gateStatus(scored.result.score) === "qualified" ? [personId] : [],
   };
 }
 
@@ -115,17 +125,16 @@ export async function qualifyProspect(
     ...opts,
     rubricKind: "icp",
   });
-  const status = gateStatus(scored.result.score);
 
-  await db.transaction(async (tx) => {
-    await tx.update(person).set({ status }).where(eq(person.id, personId));
-    await persistScore(tx, { personId, scored });
-  });
+  // Re-score writes only the fresh `llm` Scoring; it does NOT touch the pipeline position
+  // (Person.status_id is the operator's column now, not qualification - ADR-0020). Qualification is
+  // the read over this new Scoring.
+  await persistScore(db, { personId, scored });
 
   return {
     personId,
     prospectsCreated: 0,
     skipped: false,
-    qualifiedProspectIds: status === "qualified" ? [personId] : [],
+    qualifiedProspectIds: gateStatus(scored.result.score) === "qualified" ? [personId] : [],
   };
 }

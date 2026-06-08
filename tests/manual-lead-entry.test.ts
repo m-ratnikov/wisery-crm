@@ -3,6 +3,7 @@ import { eq } from "drizzle-orm";
 import { personSubject } from "@/lib/prospect/identity";
 import { manualLeadSchema } from "@/lib/prospect/manual";
 import { displayName } from "@/lib/prospect/read";
+import { entryStatus } from "./helpers/entry-status";
 
 // --- Unit: the PersonSubject seam, the display-name resolver, and the manual-lead schema (no DB) ---
 
@@ -87,6 +88,7 @@ describe.skipIf(!url)("manual-lead-entry: pipeline (integration)", () => {
   let icp: typeof import("@/lib/icp/config");
   let manual: typeof import("@/lib/prospect/manual");
   let qualify: typeof import("@/lib/qualify/pipeline");
+  let qualifyRead: typeof import("@/lib/qualify/read");
   let read: typeof import("@/lib/prospect/read");
   let signalsPipeline: typeof import("@/lib/signals/pipeline");
   let sources: typeof import("@/lib/signals/sources");
@@ -120,6 +122,7 @@ describe.skipIf(!url)("manual-lead-entry: pipeline (integration)", () => {
     icp = await import("@/lib/icp/config");
     manual = await import("@/lib/prospect/manual");
     qualify = await import("@/lib/qualify/pipeline");
+    qualifyRead = await import("@/lib/qualify/read");
     read = await import("@/lib/prospect/read");
     signalsPipeline = await import("@/lib/signals/pipeline");
     sources = await import("@/lib/signals/sources");
@@ -133,14 +136,21 @@ describe.skipIf(!url)("manual-lead-entry: pipeline (integration)", () => {
     await closeDb();
   });
 
-  it("a manual lead starts unscored (no auto-score) and re-score writes an llm Scoring", async () => {
+  it("a manual lead starts at the entry status, unassessed, and re-score writes an llm Scoring", async () => {
     const id = await manual.addManualLead({ name: "Alice", company: "Acme" });
     const db = getDb();
     const [p] = await db.select().from(schema.person).where(eq(schema.person.id, id));
     expect(p.origin).toBe("manual");
     expect(p.signalId).toBeNull();
     expect(p.name).toBe("Alice");
-    expect(p.status).toBe("new");
+    // A manual lead is born at the default pipeline's entry status ('Cold'), not a qualification
+    // value (ADR-0020), and is unassessed until re-scored (ADR-0019).
+    const [entry] = await db
+      .select({ name: schema.pipelineStatus.name })
+      .from(schema.pipelineStatus)
+      .where(eq(schema.pipelineStatus.id, p.statusId));
+    expect(entry.name).toBe("Cold");
+    expect(await qualifyRead.qualificationFor(id)).toBe("unassessed");
     // Manual entry no longer auto-scores (ADR-0019): no Scoring exists until the user re-scores.
     expect(
       await db.select().from(schema.scorings).where(eq(schema.scorings.personId, id)),
@@ -148,8 +158,10 @@ describe.skipIf(!url)("manual-lead-entry: pipeline (integration)", () => {
 
     const result = await qualify.qualifyProspect(id, { llm: scorer(4) });
     expect(result.qualifiedProspectIds).toEqual([id]);
+    // The pipeline position is unchanged by re-score; only qualification moves (the read).
     const [p2] = await db.select().from(schema.person).where(eq(schema.person.id, id));
-    expect(p2.status).toBe("qualified");
+    expect(p2.statusId).toBe(p.statusId);
+    expect(await qualifyRead.qualificationFor(id)).toBe("qualified");
     const ss = await db.select().from(schema.scorings).where(eq(schema.scorings.personId, id));
     expect(ss).toHaveLength(1);
     expect(ss[0].score).toBe(4);
@@ -169,12 +181,11 @@ describe.skipIf(!url)("manual-lead-entry: pipeline (integration)", () => {
 
   it("the origin CHECK forbids a signal-origin row with no signal and a manual row with no name", async () => {
     const db = getDb();
-    await expect(
-      db.insert(schema.person).values({ origin: "signal", status: "new" }),
-    ).rejects.toThrow();
-    await expect(
-      db.insert(schema.person).values({ origin: "manual", status: "new" }),
-    ).rejects.toThrow();
+    const entry = await entryStatus();
+    // Supply valid pipeline columns so the only thing that can fail is the origin CHECK (ADR-0020's
+    // FK columns are NOT NULL, so omitting them would reject for the wrong reason).
+    await expect(db.insert(schema.person).values({ origin: "signal", ...entry })).rejects.toThrow();
+    await expect(db.insert(schema.person).values({ origin: "manual", ...entry })).rejects.toThrow();
   });
 
   it("lists a manual prospect alongside a discovered one, the discovered one unchanged", async () => {

@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { canonicalizePermalink, dedupKeyFor } from "@/lib/posts/dedup";
+import { entryStatus } from "./helpers/entry-status";
 
 // --- Unit: dedup-key derivation (no DB) ---
 
@@ -52,7 +53,7 @@ describe.skipIf(!url)("engagement-posts: pipeline + feed (integration)", () => {
   async function makePerson(name: string, monitored: boolean): Promise<string> {
     const [p] = await getDb()
       .insert(schema.person)
-      .values({ origin: "manual", name, status: "new", monitored })
+      .values({ origin: "manual", name, monitored, ...(await entryStatus()) })
       .returning();
     return p.id;
   }

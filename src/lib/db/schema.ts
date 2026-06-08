@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -159,9 +160,47 @@ export const userProfile = pgTable("user_profile", {
   ...timestamps(),
 });
 
+// Configurable pipelines (ADR-0020): an operator-owned ordered set of statuses, config-as-data
+// (a peer of Rubric and User Profile), seeded from code then CRUD-able. A Person's pipeline
+// position is a FK into `pipeline_status`, not a fixed enum, so the columns the operator works
+// in are data, not a migration. `slug` is the stable handle the seed/backfill key on; one default
+// pipeline newly created People enter at.
+export const pipeline = pgTable("pipeline", {
+  id: uuid("id")
+    .primaryKey()
+    .default(sql`gen_random_uuid()`),
+  name: text("name").notNull(),
+  slug: text("slug").notNull().unique(),
+  isDefault: boolean("is_default").notNull().default(false),
+  ...timestamps(),
+});
+
+// One ordered column in a pipeline. `position` orders the columns (unique within a pipeline). The
+// (pipeline_id, id) unique index is the composite-FK target Person points at, so the DB - not an
+// app check - guarantees a Person's status always belongs to its own pipeline (ADR-0020).
+export const pipelineStatus = pgTable(
+  "pipeline_status",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .default(sql`gen_random_uuid()`),
+    pipelineId: uuid("pipeline_id")
+      .notNull()
+      .references(() => pipeline.id, { onDelete: "restrict" }),
+    name: text("name").notNull(),
+    position: integer("position").notNull(),
+    ...timestamps(),
+  },
+  (t) => [
+    uniqueIndex("pipeline_status_pipeline_id_uq").on(t.pipelineId, t.id),
+    uniqueIndex("pipeline_status_position_uq").on(t.pipelineId, t.position),
+  ],
+);
+
 // Qualification (qualification). A Prospect is a person under evaluation, fanned out from a
-// Signal (one-to-many, ADR-0005); its pipeline progress lives in `status` (text + Zod, the
-// most churn-prone set). A Scoring is the per-person ICP rating against a rubric version -
+// Signal (one-to-many, ADR-0005); its pipeline progress lives in `pipeline_id` + `status_id`, a
+// FK into a configurable pipeline (ADR-0020), not a fixed enum. A Scoring is the per-person ICP
+// rating against a rubric version -
 // additive, so re-scoring is new rows and the learning loop binds outcomes to the exact
 // score and rubric a prospect was acted on (D5, D7).
 // A Prospect originates from a signal (discovered, the fan-out path) or is entered manually
@@ -193,7 +232,15 @@ export const person = pgTable(
     headline: text("headline"),
     company: text("company"),
     linkedinUrl: text("linkedin_url"),
-    status: text("status").notNull(),
+    // The Person's pipeline position (ADR-0020): a FK into pipeline_status, not a fixed enum. The
+    // composite FK below pins (pipeline_id, status_id) to a pipeline_status's (pipeline_id, id), so
+    // a Person can never point at a status of another pipeline. Qualification is NOT here - it is a
+    // read over the latest icp Scoring (ADR-0019). The old text `status` enum was retired in the
+    // additive-then-swap migration sequence (ADR-0020).
+    pipelineId: uuid("pipeline_id")
+      .notNull()
+      .references(() => pipeline.id, { onDelete: "restrict" }),
+    statusId: uuid("status_id").notNull(),
     ...timestamps(),
   },
   (t) => [
@@ -203,6 +250,11 @@ export const person = pgTable(
       "person_origin_chk",
       sql`(${t.origin} <> 'signal' OR ${t.signalId} IS NOT NULL) AND (${t.origin} <> 'manual' OR (${t.signalId} IS NULL AND ${t.name} IS NOT NULL))`,
     ),
+    foreignKey({
+      columns: [t.pipelineId, t.statusId],
+      foreignColumns: [pipelineStatus.pipelineId, pipelineStatus.id],
+      name: "person_pipeline_status_fk",
+    }).onDelete("restrict"),
   ],
 );
 

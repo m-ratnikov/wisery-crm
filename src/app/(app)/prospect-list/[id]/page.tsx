@@ -35,7 +35,7 @@ export default async function ProspectDetailPage({ params }: { params: Promise<{
           <div>
             <h1 className="text-lg font-semibold tracking-tight">{detail.name}</h1>
             <p className="mt-1 text-sm text-zinc-500">
-              {detail.status} &middot; score {detail.score ?? "-"}
+              {detail.status} &middot; {detail.qualification} &middot; score {detail.score ?? "-"}
             </p>
           </div>
           <div className="flex gap-2">

@@ -22,6 +22,11 @@ export function getDb() {
   return dbInstance;
 }
 
+// The top-level db handle. A stage's persist helper takes `Db | DbTx` so it runs either standalone
+// (re-score, a single insert that needs no transaction) or inside a `db.transaction` (the discovered
+// path, atomic with the prospect insert).
+export type Db = ReturnType<typeof getDb>;
+
 // The transaction handle drizzle passes to a `db.transaction(async (tx) => ...)` callback.
 // Named here so a stage can take an injected `enqueueNext(tx, ...)` that enqueues the next
 // pipeline job on the SAME transaction (atomic handoff, ADR-0009) without leaking drizzle

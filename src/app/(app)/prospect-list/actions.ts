@@ -7,6 +7,7 @@ import { enqueueEnrich, enqueueEnrichForProspects } from "@/lib/enrich/enrich-qu
 import { setAutoEnrich } from "@/lib/enrich/settings";
 import { setMonitored } from "@/lib/posts/pipeline";
 import { enqueueFetchPosts } from "@/lib/posts/posts-queue";
+import { setPersonStatus } from "@/lib/pipeline/config";
 import { addManualLead } from "@/lib/prospect/manual";
 import { qualifyProspect } from "@/lib/qualify/pipeline";
 
@@ -61,6 +62,14 @@ export async function addLeadAction(formData: FormData): Promise<void> {
 // the user with no background retry. This is the single on-demand scoring action.
 export async function reScoreAction(formData: FormData): Promise<void> {
   await qualifyProspect(field(formData, "id"));
+  revalidatePath(ROUTE);
+}
+
+// Move a person to a pipeline status (ADR-0020): a quick DB write. The composite FK rejects a
+// status that belongs to another pipeline, so a malformed pair throws rather than landing silently.
+// The pipeline position is the operator's column, orthogonal to the derived qualification.
+export async function setStatusAction(formData: FormData): Promise<void> {
+  await setPersonStatus(field(formData, "id"), field(formData, "statusId"));
   revalidatePath(ROUTE);
 }
 

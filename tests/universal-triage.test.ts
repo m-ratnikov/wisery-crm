@@ -26,6 +26,7 @@ describe.skipIf(!url)("universal-triage: advisory + decide (integration)", () =>
   let advisory: typeof import("@/lib/triage/advisory");
   let decide: typeof import("@/lib/triage/decide");
   let read: typeof import("@/lib/triage/read");
+  let qualifyRead: typeof import("@/lib/qualify/read");
 
   let sourceId = "";
   let scanId = "";
@@ -75,6 +76,7 @@ describe.skipIf(!url)("universal-triage: advisory + decide (integration)", () =>
     advisory = await import("@/lib/triage/advisory");
     decide = await import("@/lib/triage/decide");
     read = await import("@/lib/triage/read");
+    qualifyRead = await import("@/lib/qualify/read");
     await truncateAll();
     await icp.saveRubric({ name: "icp", criteria });
     const [src] = await getDb()
@@ -148,9 +150,17 @@ describe.skipIf(!url)("universal-triage: advisory + decide (integration)", () =>
       .select()
       .from(schema.person)
       .where(eq(schema.person.signalId, signalId));
-    // The advisory score (4) is promoted and the disposition derives from it (ADR-0019): a
-    // qualifying advisory makes the approved person `qualified` without a second LLM pass.
-    expect(p).toMatchObject({ type: "prospect", origin: "signal", status: "qualified" });
+    // The approved person enters the pipeline at the entry status ('Cold'); qualification is the read
+    // over the promoted advisory Scoring, not the pipeline position (ADR-0020).
+    expect(p).toMatchObject({ type: "prospect", origin: "signal" });
+    const [entry] = await getDb()
+      .select({ name: schema.pipelineStatus.name })
+      .from(schema.pipelineStatus)
+      .where(eq(schema.pipelineStatus.id, p.statusId));
+    expect(entry.name).toBe("Cold");
+    // The advisory score (4) is promoted, so the qualification read returns `qualified` without a
+    // second LLM pass (ADR-0019).
+    expect(await qualifyRead.qualificationFor(p.id)).toBe("qualified");
     expect(out.createdEntityId).toBe(p.id);
 
     // The promoted initial Scoring carries the advisory score, provenance `advisory`, the sentinel
@@ -180,8 +190,9 @@ describe.skipIf(!url)("universal-triage: advisory + decide (integration)", () =>
       .select()
       .from(schema.person)
       .where(eq(schema.person.signalId, signalId));
-    // No rubric to promote against -> no Scoring and the person stays `new` (unassessed, ADR-0019).
-    expect(p.status).toBe("new");
+    // No rubric to promote against -> no Scoring, so the qualification read is `unassessed`; the
+    // person still enters the pipeline at its entry status (ADR-0019/0020).
+    expect(await qualifyRead.qualificationFor(p.id)).toBe("unassessed");
     expect(
       await getDb().select().from(schema.scorings).where(eq(schema.scorings.personId, p.id)),
     ).toHaveLength(0);

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { getSettings } from "@/lib/enrich/settings";
+import { getDefaultPipeline } from "@/lib/pipeline/config";
 import { listProspects } from "@/lib/prospect/read";
 import { ProspectGrid, type GridItem } from "./_components/ProspectGrid";
 
@@ -14,18 +15,26 @@ export const metadata: Metadata = {
 };
 
 export default async function ProspectListPage() {
-  const [person, settings] = await Promise.all([listProspects(), getSettings()]);
-  // enriched is a derived facet (ADR-0008); pass a client-friendly shape (no Date).
+  const [person, settings, pipeline] = await Promise.all([
+    listProspects(),
+    getSettings(),
+    getDefaultPipeline(),
+  ]);
+  // enriched is a derived facet (ADR-0008); qualification is the derived read (ADR-0019), distinct
+  // from the pipeline position (status). Pass a client-friendly shape (no Date).
   const items: GridItem[] = person.map((p) => ({
     id: p.id,
     name: p.name,
     status: p.status,
+    qualification: p.qualification,
     origin: p.origin,
     score: p.score,
     summary: p.summary,
     sourceKind: p.sourceKind,
     enriched: p.enriched,
   }));
+  // The default pipeline's ordered statuses drive the filter and the per-row status-setter (ADR-0020).
+  const statuses = pipeline.statuses.map((s) => ({ id: s.id, name: s.name }));
 
   return (
     <div className="flex flex-1 flex-col bg-zinc-50 dark:bg-zinc-950">
@@ -37,7 +46,7 @@ export default async function ProspectListPage() {
             single or a selected batch. Toggle auto-enrich to enrich on qualification.
           </p>
         </header>
-        <ProspectGrid items={items} autoEnrich={settings.autoEnrich} />
+        <ProspectGrid items={items} statuses={statuses} autoEnrich={settings.autoEnrich} />
       </div>
     </div>
   );

@@ -2,11 +2,13 @@ import "server-only";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
 import { person } from "@/lib/db/schema";
+import { getEntryStatus } from "@/lib/pipeline/config";
 
 // Manual lead entry (ADR-0010): the CRM user adds a known person by hand. `name` is required
 // (the per-origin CHECK enforces it for origin = manual); the rest is optional identity. The
-// prospect is born `origin = manual`, no signal, status `new`, then qualified by personId.
-// `origin` itself is code-set (never user input), so it needs no input-Zod.
+// prospect is born `origin = manual`, no signal, at the default pipeline's entry status (ADR-0020),
+// unassessed until the user re-scores. `origin` itself is code-set (never user input), so it needs
+// no input-Zod.
 export const manualLeadSchema = z.object({
   name: z.string().trim().min(1, "name is required"),
   headline: z.string().trim().optional(),
@@ -21,11 +23,13 @@ function orNull(v: string | undefined): string | null {
 
 export async function addManualLead(input: ManualLeadInput): Promise<string> {
   const parsed = manualLeadSchema.parse(input);
+  const entry = await getEntryStatus();
   const [row] = await getDb()
     .insert(person)
     .values({
       origin: "manual",
-      status: "new",
+      pipelineId: entry.pipelineId,
+      statusId: entry.statusId,
       name: parsed.name,
       headline: orNull(parsed.headline),
       company: orNull(parsed.company),

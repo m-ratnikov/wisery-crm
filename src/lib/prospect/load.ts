@@ -3,6 +3,7 @@ import { eq, type InferSelectModel } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { person, signals } from "@/lib/db/schema";
 import { type PersonSubject, personSubject } from "@/lib/prospect/identity";
+import { qualificationFor } from "@/lib/qualify/read";
 
 type ProspectRow = InferSelectModel<typeof person>;
 
@@ -16,18 +17,19 @@ export async function loadProspectById(personId: string): Promise<ProspectRow> {
   return prospect;
 }
 
-// The preamble for the enrich pipeline: load a prospect in a workable disposition (`qualified`)
-// together with its PersonSubject (resolved from its signal for a discovered prospect, or its own
-// columns for a manual one - ADR-0010). Returns null when the prospect is not workable (new,
-// below-bar), which the pipeline treats as a skip; throws if the prospect (or a signal-origin
-// prospect's signal) is missing - a precondition error the worker retries. One authoritative
-// representation of "is this prospect actionable", origin-agnostic for its consumers.
+// The preamble for the enrich pipeline: load a prospect that is workable (qualified) together with
+// its PersonSubject (resolved from its signal for a discovered prospect, or its own columns for a
+// manual one - ADR-0010). "Workable" is now the qualification READ (latest icp Scoring >= 3,
+// ADR-0019/0020), not a stored status; returns null when the prospect is below-bar or unassessed,
+// which the pipeline treats as a skip; throws if the prospect (or a signal-origin prospect's signal)
+// is missing - a precondition error the worker retries. One authoritative representation of "is this
+// prospect actionable", origin-agnostic for its consumers.
 export async function loadActionableProspect(
   personId: string,
 ): Promise<{ prospect: ProspectRow; subject: PersonSubject } | null> {
   const db = getDb();
   const prospect = await loadProspectById(personId);
-  if (prospect.status !== "qualified") {
+  if ((await qualificationFor(personId)) !== "qualified") {
     return null;
   }
   const [signal] = prospect.signalId
