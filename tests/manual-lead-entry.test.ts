@@ -107,7 +107,7 @@ describe.skipIf(!url)("manual-lead-entry: pipeline (integration)", () => {
   async function truncateAll() {
     const db = getDb();
     await db.delete(schema.scorings);
-    await db.delete(schema.prospects);
+    await db.delete(schema.person);
     await db.delete(schema.signals);
     await db.delete(schema.scans);
     await db.delete(schema.sources);
@@ -136,7 +136,7 @@ describe.skipIf(!url)("manual-lead-entry: pipeline (integration)", () => {
   it("adds a manual lead (no signal) and qualifies it by prospect id", async () => {
     const id = await manual.addManualLead({ name: "Alice", company: "Acme" });
     const db = getDb();
-    const [p] = await db.select().from(schema.prospects).where(eq(schema.prospects.id, id));
+    const [p] = await db.select().from(schema.person).where(eq(schema.person.id, id));
     expect(p.origin).toBe("manual");
     expect(p.signalId).toBeNull();
     expect(p.name).toBe("Alice");
@@ -144,9 +144,9 @@ describe.skipIf(!url)("manual-lead-entry: pipeline (integration)", () => {
 
     const result = await qualify.qualifyProspect(id, { llm: scorer(4) });
     expect(result.qualifiedProspectIds).toEqual([id]);
-    const [p2] = await db.select().from(schema.prospects).where(eq(schema.prospects.id, id));
+    const [p2] = await db.select().from(schema.person).where(eq(schema.person.id, id));
     expect(p2.status).toBe("qualified");
-    const ss = await db.select().from(schema.scorings).where(eq(schema.scorings.prospectId, id));
+    const ss = await db.select().from(schema.scorings).where(eq(schema.scorings.personId, id));
     expect(ss).toHaveLength(1);
     expect(ss[0].score).toBe(4);
   });
@@ -156,20 +156,17 @@ describe.skipIf(!url)("manual-lead-entry: pipeline (integration)", () => {
     await qualify.qualifyProspect(id, { llm: scorer(4) });
     const again = await qualify.qualifyProspect(id, { llm: scorer(5) });
     expect(again.skipped).toBe(true);
-    const ss = await getDb()
-      .select()
-      .from(schema.scorings)
-      .where(eq(schema.scorings.prospectId, id));
+    const ss = await getDb().select().from(schema.scorings).where(eq(schema.scorings.personId, id));
     expect(ss).toHaveLength(1);
   });
 
   it("the origin CHECK forbids a signal-origin row with no signal and a manual row with no name", async () => {
     const db = getDb();
     await expect(
-      db.insert(schema.prospects).values({ origin: "signal", status: "new" }),
+      db.insert(schema.person).values({ origin: "signal", status: "new" }),
     ).rejects.toThrow();
     await expect(
-      db.insert(schema.prospects).values({ origin: "manual", status: "new" }),
+      db.insert(schema.person).values({ origin: "manual", status: "new" }),
     ).rejects.toThrow();
   });
 

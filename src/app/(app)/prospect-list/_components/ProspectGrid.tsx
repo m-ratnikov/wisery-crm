@@ -138,7 +138,7 @@ export function ProspectGrid({ items, autoEnrich }: { items: GridItem[]; autoEnr
         <thead className="text-left text-xs uppercase tracking-wide text-zinc-400">
           <tr>
             <th className="w-8 py-2"></th>
-            <th className="py-2">Prospect</th>
+            <th className="py-2">Person</th>
             <th className="py-2">Score</th>
             <th className="py-2">Status</th>
             <th className="py-2">Source</th>
@@ -209,7 +209,7 @@ export function ProspectGrid({ items, autoEnrich }: { items: GridItem[]; autoEnr
         </tbody>
       </table>
       {rows.length === 0 ? (
-        <p className="py-6 text-center text-sm text-zinc-500">No prospects match the filter.</p>
+        <p className="py-6 text-center text-sm text-zinc-500">No person match the filter.</p>
       ) : null}
     </div>
   );

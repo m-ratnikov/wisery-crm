@@ -54,6 +54,8 @@ export default defineConfig({
         "src/lib/qualify/qualify-queue.ts",
         "src/lib/draft/draft-queue.ts",
         "src/lib/enrich/enrich-queue.ts",
+        "src/lib/posts/posts-queue.ts",
+        "src/lib/triage/advisory-queue.ts",
         // Network adapters needing an API key/token; exercised by a live smoke, not unit
         // tests (same precedent as the pg-boss wrappers). Each port's contract, fake, and
         // pipeline are unit/integration-covered.

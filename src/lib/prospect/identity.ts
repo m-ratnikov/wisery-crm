@@ -1,6 +1,6 @@
 import "server-only";
 import type { InferSelectModel } from "drizzle-orm";
-import type { prospects } from "@/lib/db/schema";
+import type { person } from "@/lib/db/schema";
 import type { SignalRow } from "@/lib/signals/connector";
 
 // The PersonSubject seam (ADR-0010): the {kind, payload} a prospect presents to scoring,
@@ -10,7 +10,7 @@ import type { SignalRow } from "@/lib/signals/connector";
 // synthesizes it. This is the ONE place origin is branched for the pipeline's read of a
 // person; consumers take a PersonSubject and never look at origin.
 
-type ProspectRow = InferSelectModel<typeof prospects>;
+type ProspectRow = InferSelectModel<typeof person>;
 
 export interface PersonSubject {
   kind: string;

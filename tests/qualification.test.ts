@@ -54,7 +54,7 @@ describe.skipIf(!url)("qualification: qualify pipeline (integration)", () => {
   async function truncateAll() {
     const db = getDb();
     await db.delete(schema.scorings);
-    await db.delete(schema.prospects);
+    await db.delete(schema.person);
     await db.delete(schema.signals);
     await db.delete(schema.scans);
     await db.delete(schema.sources);
@@ -92,16 +92,13 @@ describe.skipIf(!url)("qualification: qualify pipeline (integration)", () => {
     expect(result).toMatchObject({ prospectsCreated: 1, skipped: false });
 
     const db = getDb();
-    const ps = await db
-      .select()
-      .from(schema.prospects)
-      .where(eq(schema.prospects.signalId, signalId));
+    const ps = await db.select().from(schema.person).where(eq(schema.person.signalId, signalId));
     expect(ps).toHaveLength(1);
 
     const ss = await db
       .select()
       .from(schema.scorings)
-      .where(eq(schema.scorings.prospectId, ps[0].id));
+      .where(eq(schema.scorings.personId, ps[0].id));
     expect(ss).toHaveLength(1);
     expect(ss[0].score).toBe(4);
     expect(ss[0].provider).toBe("fake");
@@ -116,10 +113,7 @@ describe.skipIf(!url)("qualification: qualify pipeline (integration)", () => {
 
     const qualified = await persistOneSignal();
     await qualify.qualifySignal(qualified, { llm: scorer(4) });
-    const [p4] = await db
-      .select()
-      .from(schema.prospects)
-      .where(eq(schema.prospects.signalId, qualified));
+    const [p4] = await db.select().from(schema.person).where(eq(schema.person.signalId, qualified));
     expect(p4.status).toBe("qualified");
 
     // A different scan/source yields a distinct signal to score below the bar.
@@ -127,17 +121,14 @@ describe.skipIf(!url)("qualification: qualify pipeline (integration)", () => {
     await icp.saveRubric({ name: "test rubric", criteria });
     const low = await persistOneSignal();
     await qualify.qualifySignal(low, { llm: scorer(2) });
-    const [p2] = await db.select().from(schema.prospects).where(eq(schema.prospects.signalId, low));
+    const [p2] = await db.select().from(schema.person).where(eq(schema.person.signalId, low));
     expect(p2.status).toBe("below_bar");
 
     await truncateAll();
     await icp.saveRubric({ name: "test rubric", criteria });
     const thin = await persistOneSignal();
     await qualify.qualifySignal(thin, { llm: scorer(-1) });
-    const [pNeg] = await db
-      .select()
-      .from(schema.prospects)
-      .where(eq(schema.prospects.signalId, thin));
+    const [pNeg] = await db.select().from(schema.person).where(eq(schema.person.signalId, thin));
     expect(pNeg.status).toBe("below_bar");
   });
 
@@ -149,14 +140,14 @@ describe.skipIf(!url)("qualification: qualify pipeline (integration)", () => {
     expect(again.prospectsCreated).toBe(0);
     const ps = await getDb()
       .select()
-      .from(schema.prospects)
-      .where(eq(schema.prospects.signalId, signalId));
+      .from(schema.person)
+      .where(eq(schema.person.signalId, signalId));
     expect(ps).toHaveLength(1);
     // Exactly one scoring too - the duplicate run incurs no second scoring (no double spend).
     const ss = await getDb()
       .select()
       .from(schema.scorings)
-      .where(eq(schema.scorings.prospectId, ps[0].id));
+      .where(eq(schema.scorings.personId, ps[0].id));
     expect(ss).toHaveLength(1);
   });
 
@@ -165,7 +156,7 @@ describe.skipIf(!url)("qualification: qualify pipeline (integration)", () => {
     await getDb().delete(schema.scorings);
     await getDb().delete(schema.rubric);
     await expect(qualify.qualifySignal(signalId, { llm: scorer(4) })).rejects.toThrow(
-      /no active ICP rubric/,
+      /no active icp rubric/i,
     );
   });
 

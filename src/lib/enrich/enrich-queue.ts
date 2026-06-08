@@ -10,8 +10,8 @@ import { enrichProspect } from "@/lib/enrich/pipeline";
 const ENRICH_QUEUE = "enrich";
 
 // User-triggered (fire-and-forget) enrich enqueue: the prospect-list single "Enrich" action.
-export async function enqueueEnrich(prospectId: string): Promise<string | null> {
-  return enqueue(ENRICH_QUEUE, { prospectId }, { singletonKey: prospectId });
+export async function enqueueEnrich(personId: string): Promise<string | null> {
+  return enqueue(ENRICH_QUEUE, { personId }, { singletonKey: personId });
 }
 
 // Batch user-triggered enrich (grid multi-select). Resilient per id: a single enqueue
@@ -21,29 +21,29 @@ export async function enqueueEnrichForProspects(prospectIds: string[]): Promise<
     try {
       await enqueueEnrich(id);
     } catch (err) {
-      logger.error({ err, prospectId: id }, "failed to enqueue enrichment for prospect");
+      logger.error({ err, personId: id }, "failed to enqueue enrichment for prospect");
     }
   }
 }
 
 // Pipeline handoff: enqueue enrich ON the caller's transaction (the qualify prospect-write tx
 // when auto-enrich is on), so the prospect and its enrich job commit atomically (ADR-0009).
-export async function enqueueEnrichInTx(tx: DbTx, prospectId: string): Promise<string | null> {
-  return enqueueInTx(tx, ENRICH_QUEUE, { prospectId }, { singletonKey: prospectId });
+export async function enqueueEnrichInTx(tx: DbTx, personId: string): Promise<string | null> {
+  return enqueueInTx(tx, ENRICH_QUEUE, { personId }, { singletonKey: personId });
 }
 
 // The re-draft handoff is injected at the composition root as a transaction-aware callback,
 // not imported here, so enrichment never imports drafting. enrichProspect calls it inside the
 // dossier-upsert transaction when (and only when) it actually upserts a dossier.
 export interface EnrichWorkerOptions {
-  enqueueNext?: (tx: DbTx, prospectId: string) => Promise<void>;
+  enqueueNext?: (tx: DbTx, personId: string) => Promise<void>;
 }
 
 export async function registerEnrichWorker(options: EnrichWorkerOptions = {}): Promise<void> {
   await getBoss().createQueue(ENRICH_QUEUE, { policy: "singleton" });
-  await work<{ prospectId: string }>(ENRICH_QUEUE, async (jobs) => {
+  await work<{ personId: string }>(ENRICH_QUEUE, async (jobs) => {
     for (const job of jobs) {
-      await enrichProspect(job.data.prospectId, { enqueueNext: options.enqueueNext });
+      await enrichProspect(job.data.personId, { enqueueNext: options.enqueueNext });
     }
   });
 }

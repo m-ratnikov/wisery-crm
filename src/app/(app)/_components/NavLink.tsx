@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 
 // The only client component in the shell: active-route highlighting needs the current
 // path (usePathname is a client hook). Active on an exact match for "/" and on a segment
-// boundary for sub-trees, so /prospect-list/[id] keeps "Prospect list" active without a
+// boundary for sub-trees, so /prospect-list/[id] keeps "Person list" active without a
 // bare startsWith matching an unrelated "/prospect-list-archive".
 function isActive(pathname: string, href: string): boolean {
   if (href === "/") return pathname === "/";

@@ -1,10 +1,11 @@
 import "server-only";
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { getDb } from "@/lib/db";
 import { rubric, userProfile } from "@/lib/db/schema";
 import {
   type RubricCriteria,
   rubricCriteriaSchema,
+  type RubricKind,
   type SaveRubricInput,
   type UserProfileData,
   userProfileSchema,
@@ -21,13 +22,14 @@ export interface ActiveRubric {
   criteria: RubricCriteria;
 }
 
-export async function getActiveRubric(): Promise<ActiveRubric | null> {
-  // The partial unique index guarantees one active row; ordering by version makes the
-  // "highest version" intent explicit and correct even if the index were ever absent.
+export async function getActiveRubric(kind: RubricKind = "icp"): Promise<ActiveRubric | null> {
+  // The partial unique index guarantees one active row per kind (ADR-0017); ordering by version
+  // makes the "highest version" intent explicit. Defaults to `icp` so the qualifier's existing
+  // callers are unchanged; the advisory filter passes `peer`/`company` for those intents.
   const [row] = await getDb()
     .select()
     .from(rubric)
-    .where(eq(rubric.active, true))
+    .where(and(eq(rubric.active, true), eq(rubric.kind, kind)))
     .orderBy(desc(rubric.version))
     .limit(1);
   if (!row) return null;
@@ -48,13 +50,19 @@ export async function saveRubric(input: SaveRubricInput): Promise<ActiveRubric> 
     // arithmetic - two simultaneous saves would compute the same next version, and the
     // index makes the loser fail (to retry) rather than create a second active row.
     // Acceptable under D1 (single-user); revisit if concurrent editors ever exist.
-    await tx.update(rubric).set({ active: false }).where(eq(rubric.active, true));
+    // The icp-config UI edits the ICP (buyer) rubric; scope the deactivate + version to kind=icp so
+    // a future active peer/company rubric is untouched (ADR-0017).
+    await tx
+      .update(rubric)
+      .set({ active: false })
+      .where(and(eq(rubric.active, true), eq(rubric.kind, "icp")));
     const [{ max }] = await tx
       .select({ max: sql<number>`coalesce(max(${rubric.version}), 0)::int` })
-      .from(rubric);
+      .from(rubric)
+      .where(eq(rubric.kind, "icp"));
     const [row] = await tx
       .insert(rubric)
-      .values({ name: input.name, rubric: criteria, version: max + 1, active: true })
+      .values({ name: input.name, kind: "icp", rubric: criteria, version: max + 1, active: true })
       .returning();
     return { id: row.id, name: row.name, version: row.version, criteria };
   });

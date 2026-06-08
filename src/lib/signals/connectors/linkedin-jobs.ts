@@ -5,7 +5,7 @@ import type { RawItem } from "@/lib/signals/connector";
 // RawItem normalization. The network fetch lives in ./linkedin-jobs-client (coverage-excluded,
 // like the Apify/Anthropic adapters); this module stays free of I/O so its mapping is
 // unit-tested. The config schema lives in ../source-kind-schemas (shared with the catalog). A
-// LinkedIn job posting becomes a `job`-kind signal; turning a job into person prospects is the
+// LinkedIn job posting becomes a `job`-kind signal; turning a job into person person is the
 // deferred normalize-expand stage (M2).
 
 // A normalized job posting from the client. The connector boundary owns the upstream shape;

@@ -44,7 +44,7 @@ describe.skipIf(!url)("prospect-list: read-model (integration)", () => {
       schema.drafts,
       schema.dossiers,
       schema.scorings,
-      schema.prospects,
+      schema.person,
       schema.signals,
       schema.scans,
       schema.sources,
@@ -62,8 +62,8 @@ describe.skipIf(!url)("prospect-list: read-model (integration)", () => {
     await qualify.qualifySignal(scan.persistedSignalIds[0], { llm: scorer(score) });
     const [p] = await getDb()
       .select()
-      .from(schema.prospects)
-      .where(eq(schema.prospects.signalId, scan.persistedSignalIds[0]));
+      .from(schema.person)
+      .where(eq(schema.person.signalId, scan.persistedSignalIds[0]));
     return p.id;
   }
 
@@ -113,11 +113,11 @@ describe.skipIf(!url)("prospect-list: read-model (integration)", () => {
   });
 
   it("returns a prospect's detail with its latest scoring, selected draft, and dossier", async () => {
-    const prospectId = await makeProspect(5);
-    await enrich.enrichProspect(prospectId, { provider: enricher() });
-    await draft.draftProspect(prospectId, { llm: drafter() });
+    const personId = await makeProspect(5);
+    await enrich.enrichProspect(personId, { provider: enricher() });
+    await draft.draftProspect(personId, { llm: drafter() });
 
-    const detail = await read.getProspectDetail(prospectId);
+    const detail = await read.getProspectDetail(personId);
     expect(detail?.score).toBe(5);
     expect(detail?.reason).toMatch(/bar/i);
     expect(detail?.draft).toMatch(/hiring push/i);

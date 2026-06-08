@@ -8,7 +8,8 @@ Related: [product-overview.md](../product-overview.md) (the spine, locked decisi
 [system-design.md](system-design.md) (C4 L2 containers + flows), [cross-cutting.md](cross-cutting.md),
 [ADR-0001](../adr/0001-background-job-runtime.md). Promoted from change `system-context-c4-l1`
 (2026-05-22); LLM/provider labels and the draft-position note reconciled by `c4-level2-architecture`
-(2026-05-24).
+(2026-05-24); the engagement motion folded in by `content-marketing-engagement` (2026-06-07) - it adds
+no new external system, and the post author is reached only by a manual human action like the Prospect.
 
 ```mermaid
 flowchart TB
@@ -42,6 +43,7 @@ What crosses each boundary:
 - **LLM provider <-> system**: outbound qualify/draft prompts, inbound scores and drafts. Provider-agnostic behind an `LLMProvider` port, Anthropic the default adapter (D9). Carries prospect PII.
 - **Managed Postgres <-> system**: the system's own managed datastore. Shown as a dependency because it is hosted, but it holds our own schema (not a third-party system of record). How async jobs run on it is an L2/technology concern, fixed by ADR-0001.
 - **CRM user -> Prospect**: a manual human action through the chosen channel. The system has no edge to the Prospect (ToS-safe, D2).
+- **CRM user -> Engagement target** (a peer or buyer whose post is commented on): also a manual human action - the system drafts the comment but never posts it (D2), the same human-only recipient edge as the Prospect. The engagement motion (content-marketing-engagement) introduces **no new external system**: a person's posts and deep profile arrive through the existing scraping/enrichment provider (a new `fetchPosts` method on the `EnrichmentProvider` port), comments through the existing `LLMProvider` port.
 
 ## Boundary runtime flow
 

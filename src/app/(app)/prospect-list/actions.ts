@@ -1,9 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { generateComment } from "@/lib/comments/generate";
+import { dismissComment, markCommentPosted } from "@/lib/comments/read";
 import { enqueueDraft } from "@/lib/draft/draft-queue";
 import { enqueueEnrich, enqueueEnrichForProspects } from "@/lib/enrich/enrich-queue";
 import { setAutoEnrich } from "@/lib/enrich/settings";
+import { setMonitored } from "@/lib/posts/pipeline";
+import { enqueueFetchPosts } from "@/lib/posts/posts-queue";
 import { addManualLead } from "@/lib/prospect/manual";
 import { enqueueQualifyProspect } from "@/lib/qualify/qualify-queue";
 
@@ -64,4 +68,37 @@ export async function addLeadAction(formData: FormData): Promise<void> {
 export async function reQualifyAction(formData: FormData): Promise<void> {
   await enqueueQualifyProspect(field(formData, "id"));
   revalidatePath(ROUTE);
+}
+
+// Engagement (engagement-posts, ADR-0018). "Get latest posts": enqueue a fetch-posts job
+// fire-and-forget (ADR-0007 user-triggered pattern); the worker stores them idempotently.
+export async function fetchPostsAction(formData: FormData): Promise<void> {
+  const id = field(formData, "id");
+  await enqueueFetchPosts(id);
+  revalidatePath(`${ROUTE}/${id}`);
+}
+
+// Flag / unflag a person as `monitored` (the people the Feed watches). A quick DB write.
+export async function monitorAction(formData: FormData): Promise<void> {
+  const id = field(formData, "id");
+  await setMonitored(id, field(formData, "monitored") === "true");
+  revalidatePath(`${ROUTE}/${id}`);
+}
+
+// Comments (engagement-comments, ADR-0018). Generation is a SYNCHRONOUS server action (not a queue
+// job): the user waits and gets a draft; each call writes a new Comment row. The human posts it on
+// the channel by hand, then marks it posted (D2) - the system never auto-posts.
+export async function generateCommentAction(formData: FormData): Promise<void> {
+  await generateComment(field(formData, "postId"));
+  revalidatePath(`${ROUTE}/${field(formData, "personId")}`);
+}
+
+export async function markCommentPostedAction(formData: FormData): Promise<void> {
+  await markCommentPosted(field(formData, "commentId"));
+  revalidatePath(`${ROUTE}/${field(formData, "personId")}`);
+}
+
+export async function dismissCommentAction(formData: FormData): Promise<void> {
+  await dismissComment(field(formData, "commentId"));
+  revalidatePath(`${ROUTE}/${field(formData, "personId")}`);
 }

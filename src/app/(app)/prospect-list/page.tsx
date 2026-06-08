@@ -14,9 +14,9 @@ export const metadata: Metadata = {
 };
 
 export default async function ProspectListPage() {
-  const [prospects, settings] = await Promise.all([listProspects(), getSettings()]);
+  const [person, settings] = await Promise.all([listProspects(), getSettings()]);
   // enriched/drafted are derived facets (ADR-0008); pass a client-friendly shape (no Date).
-  const items: GridItem[] = prospects.map((p) => ({
+  const items: GridItem[] = person.map((p) => ({
     id: p.id,
     name: p.name,
     status: p.status,

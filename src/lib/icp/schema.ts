@@ -26,6 +26,12 @@ export const rubricCriteriaSchema = z.object({
 });
 export type RubricCriteria = z.infer<typeof rubricCriteriaSchema>;
 
+// The rubric kinds (ADR-0017): the buyer (ICP) rubric scores prospects, the amplifier (peer)
+// rubric scores peers, the firmographic (company) rubric scores companies. One active rubric per
+// kind (partial unique index). text + Zod - the column has no DB enum.
+export const rubricKindSchema = z.enum(["icp", "peer", "company"]);
+export type RubricKind = z.infer<typeof rubricKindSchema>;
+
 export const caseStudySchema = z.object({
   title: z.string(),
   result: z.string(),

@@ -4,6 +4,7 @@ import {
   type EnrichmentProvider,
   EnrichmentProviderError,
   type EnrichmentResult,
+  type RawPost,
 } from "@/lib/enrich/provider";
 import type { PersonSubject } from "@/lib/prospect/identity";
 
@@ -26,6 +27,21 @@ export function createApifyEnrichment(): EnrichmentProvider {
       return Promise.reject(
         new EnrichmentProviderError(
           `Apify enrichment for subject kind "${subject.kind}" is not yet wired to a concrete actor`,
+        ),
+      );
+    },
+    fetchPosts(subject: PersonSubject): Promise<RawPost[]> {
+      const token = getConfig().apifyApiToken;
+      if (!token) {
+        return Promise.reject(
+          new EnrichmentProviderError(
+            "APIFY_API_TOKEN is not set; the Apify posts adapter cannot run",
+          ),
+        );
+      }
+      return Promise.reject(
+        new EnrichmentProviderError(
+          `Apify post fetch for subject kind "${subject.kind}" is not yet wired to a concrete actor`,
         ),
       );
     },

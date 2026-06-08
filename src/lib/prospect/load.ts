@@ -1,21 +1,17 @@
 import "server-only";
 import { eq, type InferSelectModel } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { prospects, signals } from "@/lib/db/schema";
+import { person, signals } from "@/lib/db/schema";
 import { type PersonSubject, personSubject } from "@/lib/prospect/identity";
 
-type ProspectRow = InferSelectModel<typeof prospects>;
+type ProspectRow = InferSelectModel<typeof person>;
 
 // Load a prospect by id or throw a precondition error (the worker retries). One
 // representation, shared by the actionable-prospect preamble and the prospect-keyed qualify.
-export async function loadProspectById(prospectId: string): Promise<ProspectRow> {
-  const [prospect] = await getDb()
-    .select()
-    .from(prospects)
-    .where(eq(prospects.id, prospectId))
-    .limit(1);
+export async function loadProspectById(personId: string): Promise<ProspectRow> {
+  const [prospect] = await getDb().select().from(person).where(eq(person.id, personId)).limit(1);
   if (!prospect) {
-    throw new Error(`prospect ${prospectId} not found`);
+    throw new Error(`prospect ${personId} not found`);
   }
   return prospect;
 }
@@ -28,10 +24,10 @@ export async function loadProspectById(prospectId: string): Promise<ProspectRow>
 // signal) is missing - a precondition error the worker retries. One authoritative
 // representation of "is this prospect actionable", origin-agnostic for its consumers.
 export async function loadActionableProspect(
-  prospectId: string,
+  personId: string,
 ): Promise<{ prospect: ProspectRow; subject: PersonSubject } | null> {
   const db = getDb();
-  const prospect = await loadProspectById(prospectId);
+  const prospect = await loadProspectById(personId);
   if (prospect.status !== "qualified" && prospect.status !== "queued") {
     return null;
   }

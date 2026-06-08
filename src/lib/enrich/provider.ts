@@ -11,9 +11,22 @@ export interface EnrichmentResult {
   provider: string;
 }
 
+// A person's content item as the provider yields it (engagement-posts, ADR-0018). `providerPostId`
+// is the provider's stable post/activity id when it has one; otherwise the core canonicalizes
+// `externalUrl` for the dedup key. An item with no stable identifier is dropped, never fabricated.
+export interface RawPost {
+  providerPostId?: string | null;
+  externalUrl: string;
+  content: string;
+  postedAt?: Date | null;
+}
+
 export interface EnrichmentProvider {
   readonly name: string;
   enrich(subject: PersonSubject): Promise<EnrichmentResult>;
+  // Fetch a person's recent posts. A new method on the existing port (ADR-0018), distinct from the
+  // deep-profile `enrich` above - same scraping/enrichment seam (D4), not a new port.
+  fetchPosts(subject: PersonSubject): Promise<RawPost[]>;
 }
 
 export class EnrichmentProviderError extends Error {

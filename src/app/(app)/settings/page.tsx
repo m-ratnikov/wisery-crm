@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
+import { getActiveGuidance } from "@/lib/comments/guidance";
 import { getSettings } from "@/lib/enrich/settings";
-import { saveSettingsAction } from "./actions";
+import { saveGuidanceAction, saveSettingsAction } from "./actions";
 
 // The wired settings screen (app-shell): the app-wide home of the per-tenant settings row,
 // starting with the auto-enrich flag (ADR-0007). prospect-list also exposes auto-enrich
@@ -15,6 +16,7 @@ export const metadata: Metadata = {
 
 export default async function SettingsPage() {
   const settings = await getSettings();
+  const guidance = await getActiveGuidance();
 
   return (
     <div className="flex flex-1 flex-col bg-zinc-50 dark:bg-zinc-950">
@@ -44,13 +46,54 @@ export default async function SettingsPage() {
                 defaultChecked={settings.autoEnrich}
                 className="h-4 w-4 rounded border-zinc-300 dark:border-zinc-600"
               />
-              Auto-enrich qualified prospects
+              Auto-enrich qualified person
             </label>
             <button
               type="submit"
               className="shrink-0 rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
             >
               Save changes
+            </button>
+          </form>
+        </section>
+
+        <section className="mt-5 rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
+          <h2 className="text-sm font-semibold">Comment guidance</h2>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            The global tone and rules every AI comment is grounded in (ADR-0018). You always post
+            comments by hand.
+          </p>
+          <form action={saveGuidanceAction} className="mt-4 space-y-3">
+            <div>
+              <label htmlFor="tone" className="block text-xs font-medium text-zinc-600">
+                Tone
+              </label>
+              <input
+                id="tone"
+                name="tone"
+                type="text"
+                defaultValue={guidance?.guidance.tone ?? ""}
+                placeholder="warm, genuine, peer-to-peer"
+                className="mt-1 w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-950"
+              />
+            </div>
+            <div>
+              <label htmlFor="rules" className="block text-xs font-medium text-zinc-600">
+                Rules (one per line)
+              </label>
+              <textarea
+                id="rules"
+                name="rules"
+                rows={4}
+                defaultValue={(guidance?.guidance.rules ?? []).join("\n")}
+                className="mt-1 w-full rounded-md border border-zinc-300 px-2 py-1.5 text-sm dark:border-zinc-600 dark:bg-zinc-950"
+              />
+            </div>
+            <button
+              type="submit"
+              className="rounded-md bg-zinc-900 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
+            >
+              Save guidance
             </button>
           </form>
         </section>

@@ -72,7 +72,7 @@ describe.skipIf(!url)("enrichment: pipeline (integration)", () => {
     await db.delete(schema.drafts);
     await db.delete(schema.dossiers);
     await db.delete(schema.scorings);
-    await db.delete(schema.prospects);
+    await db.delete(schema.person);
     await db.delete(schema.signals);
     await db.delete(schema.scans);
     await db.delete(schema.sources);
@@ -87,8 +87,8 @@ describe.skipIf(!url)("enrichment: pipeline (integration)", () => {
     await qualify.qualifySignal(scan.persistedSignalIds[0], { llm: scorer(score) });
     const [p] = await getDb()
       .select()
-      .from(schema.prospects)
-      .where(eq(schema.prospects.signalId, scan.persistedSignalIds[0]));
+      .from(schema.person)
+      .where(eq(schema.person.signalId, scan.persistedSignalIds[0]));
     return p.id;
   }
 
@@ -114,51 +114,48 @@ describe.skipIf(!url)("enrichment: pipeline (integration)", () => {
   });
 
   it("enriches a qualified prospect into one dossier and a re-draft grounded in it", async () => {
-    const prospectId = await makeProspect(4);
-    const enriched = await enrich.enrichProspect(prospectId, { provider: enricher() });
+    const personId = await makeProspect(4);
+    const enriched = await enrich.enrichProspect(personId, { provider: enricher() });
     expect(enriched).toMatchObject({ enriched: true, skipped: false });
 
     const db = getDb();
     const dossierRows = await db
       .select()
       .from(schema.dossiers)
-      .where(eq(schema.dossiers.prospectId, prospectId));
+      .where(eq(schema.dossiers.personId, personId));
     expect(dossierRows).toHaveLength(1);
     expect(dossierRows[0].provider).toBe("fake");
 
     // The forced re-draft (what bootstrap wires as the enrich worker's enqueueNext) is
     // grounded in the dossier.
-    await draft.draftProspect(prospectId, { llm: drafter(), force: true });
+    await draft.draftProspect(personId, { llm: drafter(), force: true });
     const [selected] = await db
       .select()
       .from(schema.drafts)
-      .where(eq(schema.drafts.prospectId, prospectId));
+      .where(eq(schema.drafts.personId, personId));
     expect(selected.body).toBe("grounded-in-dossier");
   });
 
   it("re-enriching updates the single dossier (no duplicate)", async () => {
-    const prospectId = await makeProspect(4);
-    await enrich.enrichProspect(prospectId, { provider: enricher() });
-    await enrich.enrichProspect(prospectId, {
+    const personId = await makeProspect(4);
+    await enrich.enrichProspect(personId, { provider: enricher() });
+    await enrich.enrichProspect(personId, {
       provider: createFakeEnrichment(() => ({ headline: "updated" })),
     });
     const rows = await getDb()
       .select()
       .from(schema.dossiers)
-      .where(eq(schema.dossiers.prospectId, prospectId));
+      .where(eq(schema.dossiers.personId, personId));
     expect(rows).toHaveLength(1);
     expect(rows[0].data).toEqual({ headline: "updated" });
   });
 
   it("does not enrich a below-bar prospect", async () => {
-    const prospectId = await makeProspect(2);
-    const outcome = await enrich.enrichProspect(prospectId, { provider: enricher() });
+    const personId = await makeProspect(2);
+    const outcome = await enrich.enrichProspect(personId, { provider: enricher() });
     expect(outcome.skipped).toBe(true);
     expect(
-      await getDb()
-        .select()
-        .from(schema.dossiers)
-        .where(eq(schema.dossiers.prospectId, prospectId)),
+      await getDb().select().from(schema.dossiers).where(eq(schema.dossiers.personId, personId)),
     ).toHaveLength(0);
   });
 

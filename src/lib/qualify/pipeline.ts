@@ -1,12 +1,12 @@
 import "server-only";
 import { eq } from "drizzle-orm";
 import { getDb, type DbTx } from "@/lib/db";
-import { prospects, scorings, signals } from "@/lib/db/schema";
+import { person, scorings, signals } from "@/lib/db/schema";
 import type { LLMProvider } from "@/lib/llm/provider";
 import { personSubject } from "@/lib/prospect/identity";
 import { loadProspectById } from "@/lib/prospect/load";
 import { type ScoredProspect, scoreProspect } from "@/lib/qualify/scorer";
-import { gateStatus } from "@/lib/qualify/status";
+import { gateStatus, personTypeSchema } from "@/lib/qualify/status";
 
 // The testable qualify core (qualification D-E/D-H). Two entries share one scoring step:
 // - qualifySignal: the discovered path - load the signal, create the prospect, score it.
@@ -15,11 +15,11 @@ import { gateStatus } from "@/lib/qualify/status";
 // The LLM provider is injectable so tests run against the fake.
 export interface QualifyResult {
   signalId?: string;
-  prospectId?: string;
+  personId?: string;
   prospectsCreated: number;
   skipped: boolean;
-  // Ids of prospects this run left `qualified` (>= 3). The worker hands these to the
-  // enqueue-on-qualify hook so drafting runs for qualified prospects only.
+  // Ids of person this run left `qualified` (>= 3). The worker hands these to the
+  // enqueue-on-qualify hook so drafting runs for qualified person only.
   qualifiedProspectIds: string[];
 }
 
@@ -29,11 +29,11 @@ type EnqueueNext = (tx: DbTx, qualifiedProspectIds: string[]) => Promise<void>;
 // the next stage for a qualified one (ADR-0009 - the scoring and its handoff commit together).
 async function persistScore(
   tx: DbTx,
-  args: { prospectId: string; scored: ScoredProspect; status: string; enqueueNext?: EnqueueNext },
+  args: { personId: string; scored: ScoredProspect; status: string; enqueueNext?: EnqueueNext },
 ): Promise<void> {
-  const { prospectId, scored, status, enqueueNext } = args;
+  const { personId, scored, status, enqueueNext } = args;
   await tx.insert(scorings).values({
-    prospectId,
+    personId,
     rubricId: scored.rubricId,
     score: scored.result.score,
     reason: scored.result.reason,
@@ -43,7 +43,7 @@ async function persistScore(
     model: scored.model,
   });
   if (enqueueNext && status === "qualified") {
-    await enqueueNext(tx, [prospectId]);
+    await enqueueNext(tx, [personId]);
   }
 }
 
@@ -67,9 +67,9 @@ export async function qualifySignal(
   // Idempotency (D-F): if this signal already produced a prospect, do nothing - so a re-scan
   // or job retry never double-scores. Checked before the LLM call to avoid wasted spend.
   const existing = await db
-    .select({ id: prospects.id })
-    .from(prospects)
-    .where(eq(prospects.signalId, signalId))
+    .select({ id: person.id })
+    .from(person)
+    .where(eq(person.signalId, signalId))
     .limit(1);
   if (existing.length > 0) {
     return { signalId, prospectsCreated: 0, skipped: true, qualifiedProspectIds: [] };
@@ -81,13 +81,13 @@ export async function qualifySignal(
   const scored = await scoreProspect(signal, opts);
   const status = gateStatus(scored.result.score);
 
-  const prospectId = await db.transaction(async (tx) => {
+  const personId = await db.transaction(async (tx) => {
     const [prospect] = await tx
-      .insert(prospects)
+      .insert(person)
       .values({ origin: "signal", signalId, status })
-      .returning({ id: prospects.id });
+      .returning({ id: person.id });
     await persistScore(tx, {
-      prospectId: prospect.id,
+      personId: prospect.id,
       scored,
       status,
       enqueueNext: opts.enqueueNext,
@@ -99,17 +99,17 @@ export async function qualifySignal(
     signalId,
     prospectsCreated: 1,
     skipped: false,
-    qualifiedProspectIds: status === "qualified" ? [prospectId] : [],
+    qualifiedProspectIds: status === "qualified" ? [personId] : [],
   };
 }
 
 export async function qualifyProspect(
-  prospectId: string,
+  personId: string,
   opts: { llm?: LLMProvider; enqueueNext?: EnqueueNext } = {},
 ): Promise<QualifyResult> {
   const db = getDb();
 
-  const prospect = await loadProspectById(prospectId);
+  const prospect = await loadProspectById(personId);
 
   // Idempotency: a prospect already scored is left alone, so a re-qualify (the manual-add
   // recovery) or a job retry never double-scores. Keyed on the prospect (not the signal,
@@ -117,27 +117,36 @@ export async function qualifyProspect(
   const scoredAlready = await db
     .select({ id: scorings.id })
     .from(scorings)
-    .where(eq(scorings.prospectId, prospectId))
+    .where(eq(scorings.personId, personId))
     .limit(1);
   if (scoredAlready.length > 0) {
-    return { prospectId, prospectsCreated: 0, skipped: true, qualifiedProspectIds: [] };
+    return { personId, prospectsCreated: 0, skipped: true, qualifiedProspectIds: [] };
   }
 
   const [signal] = prospect.signalId
     ? await db.select().from(signals).where(eq(signals.id, prospect.signalId)).limit(1)
     : [null];
-  const scored = await scoreProspect(personSubject(prospect, signal ?? null), opts);
+  // ADR-0017: the durable Scoring uses the rubric matching the person's type - the buyer (ICP)
+  // rubric for a prospect, the amplifier (peer) rubric for a peer. Defaulting to icp here would
+  // score an approved peer against the buyer rubric and feed mis-keyed fit data to the ADR-0005
+  // learning loop.
+  const personType = personTypeSchema.parse(prospect.type);
+  const rubricKind = personType === "peer" ? "peer" : "icp";
+  const scored = await scoreProspect(personSubject(prospect, signal ?? null), {
+    ...opts,
+    rubricKind,
+  });
   const status = gateStatus(scored.result.score);
 
   await db.transaction(async (tx) => {
-    await tx.update(prospects).set({ status }).where(eq(prospects.id, prospectId));
-    await persistScore(tx, { prospectId, scored, status, enqueueNext: opts.enqueueNext });
+    await tx.update(person).set({ status }).where(eq(person.id, personId));
+    await persistScore(tx, { personId, scored, status, enqueueNext: opts.enqueueNext });
   });
 
   return {
-    prospectId,
+    personId,
     prospectsCreated: 0,
     skipped: false,
-    qualifiedProspectIds: status === "qualified" ? [prospectId] : [],
+    qualifiedProspectIds: status === "qualified" ? [personId] : [],
   };
 }

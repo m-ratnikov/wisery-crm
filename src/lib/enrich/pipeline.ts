@@ -9,27 +9,27 @@ import { loadActionableProspect } from "@/lib/prospect/load";
 // upsert its single dossier. The provider is injectable so tests use the fake. The
 // re-draft is not called here (that would import drafting); the composition root wires it.
 export interface EnrichOutcome {
-  prospectId: string;
+  personId: string;
   enriched: boolean;
   skipped: boolean;
 }
 
 export async function enrichProspect(
-  prospectId: string,
+  personId: string,
   opts: {
     provider?: EnrichmentProvider;
     // Enqueue the forced re-draft on the SAME transaction as the dossier upsert (ADR-0009),
     // so an enriched prospect can never be stranded without its dossier-grounded re-draft.
     // Injected by the worker; absent in direct/test calls.
-    enqueueNext?: (tx: DbTx, prospectId: string) => Promise<void>;
+    enqueueNext?: (tx: DbTx, personId: string) => Promise<void>;
   } = {},
 ): Promise<EnrichOutcome> {
   const db = getDb();
 
   // Only a qualified or queued prospect is enriched; a below-bar one never is (skip).
-  const loaded = await loadActionableProspect(prospectId);
+  const loaded = await loadActionableProspect(personId);
   if (!loaded) {
-    return { prospectId, enriched: false, skipped: true };
+    return { personId, enriched: false, skipped: true };
   }
   const { subject } = loaded;
 
@@ -41,13 +41,13 @@ export async function enrichProspect(
   await db.transaction(async (tx) => {
     await tx
       .insert(dossiers)
-      .values({ prospectId, data: result.data, provider: result.provider })
+      .values({ personId, data: result.data, provider: result.provider })
       .onConflictDoUpdate({
-        target: dossiers.prospectId,
+        target: dossiers.personId,
         set: { data: result.data, provider: result.provider, enrichedAt: new Date() },
       });
-    if (opts.enqueueNext) await opts.enqueueNext(tx, prospectId);
+    if (opts.enqueueNext) await opts.enqueueNext(tx, personId);
   });
 
-  return { prospectId, enriched: true, skipped: false };
+  return { personId, enriched: true, skipped: false };
 }

@@ -52,7 +52,7 @@ describe.skipIf(!url)("drafting: draft pipeline (integration)", () => {
     const db = getDb();
     await db.delete(schema.drafts);
     await db.delete(schema.scorings);
-    await db.delete(schema.prospects);
+    await db.delete(schema.person);
     await db.delete(schema.signals);
     await db.delete(schema.scans);
     await db.delete(schema.sources);
@@ -67,8 +67,8 @@ describe.skipIf(!url)("drafting: draft pipeline (integration)", () => {
     await qualify.qualifySignal(scan.persistedSignalIds[0], { llm: scorer(score) });
     const [p] = await getDb()
       .select()
-      .from(schema.prospects)
-      .where(eq(schema.prospects.signalId, scan.persistedSignalIds[0]));
+      .from(schema.person)
+      .where(eq(schema.person.signalId, scan.persistedSignalIds[0]));
     return p.id;
   }
 
@@ -92,15 +92,12 @@ describe.skipIf(!url)("drafting: draft pipeline (integration)", () => {
   });
 
   it("drafts a qualified prospect, persists a selected draft, and queues it", async () => {
-    const prospectId = await makeProspect(4);
-    const outcome = await draft.draftProspect(prospectId, { llm: drafter() });
+    const personId = await makeProspect(4);
+    const outcome = await draft.draftProspect(personId, { llm: drafter() });
     expect(outcome).toMatchObject({ drafted: true, skipped: false });
 
     const db = getDb();
-    const rows = await db
-      .select()
-      .from(schema.drafts)
-      .where(eq(schema.drafts.prospectId, prospectId));
+    const rows = await db.select().from(schema.drafts).where(eq(schema.drafts.personId, personId));
     expect(rows).toHaveLength(1);
     expect(rows[0].status).toBe("selected");
     expect(rows[0].body).toMatch(/hiring push/i);
@@ -108,47 +105,44 @@ describe.skipIf(!url)("drafting: draft pipeline (integration)", () => {
     expect(rows[0].promptVersion).toBe("v1");
     expect(rows[0].model).toBe("claude-opus-4-8");
 
-    const [p] = await db.select().from(schema.prospects).where(eq(schema.prospects.id, prospectId));
+    const [p] = await db.select().from(schema.person).where(eq(schema.person.id, personId));
     expect(p.status).toBe("queued");
   });
 
   it("does not draft a below-bar prospect", async () => {
-    const prospectId = await makeProspect(2);
-    const outcome = await draft.draftProspect(prospectId, { llm: drafter() });
+    const personId = await makeProspect(2);
+    const outcome = await draft.draftProspect(personId, { llm: drafter() });
     expect(outcome.skipped).toBe(true);
     expect(
-      await getDb().select().from(schema.drafts).where(eq(schema.drafts.prospectId, prospectId)),
+      await getDb().select().from(schema.drafts).where(eq(schema.drafts.personId, personId)),
     ).toHaveLength(0);
   });
 
   it("is idempotent: a second auto-draft creates no second selected draft", async () => {
-    const prospectId = await makeProspect(4);
-    await draft.draftProspect(prospectId, { llm: drafter() });
-    const again = await draft.draftProspect(prospectId, { llm: drafter() });
+    const personId = await makeProspect(4);
+    await draft.draftProspect(personId, { llm: drafter() });
+    const again = await draft.draftProspect(personId, { llm: drafter() });
     expect(again.skipped).toBe(true);
     expect(
-      await getDb().select().from(schema.drafts).where(eq(schema.drafts.prospectId, prospectId)),
+      await getDb().select().from(schema.drafts).where(eq(schema.drafts.personId, personId)),
     ).toHaveLength(1);
   });
 
   it("forced re-draft selects the new draft and archives the prior", async () => {
-    const prospectId = await makeProspect(4);
-    await draft.draftProspect(prospectId, { llm: drafter() });
-    const redraft = await draft.draftProspect(prospectId, { llm: drafter(), force: true });
+    const personId = await makeProspect(4);
+    await draft.draftProspect(personId, { llm: drafter() });
+    const redraft = await draft.draftProspect(personId, { llm: drafter(), force: true });
     expect(redraft.drafted).toBe(true);
 
     const db = getDb();
-    const all = await db
-      .select()
-      .from(schema.drafts)
-      .where(eq(schema.drafts.prospectId, prospectId));
+    const all = await db.select().from(schema.drafts).where(eq(schema.drafts.personId, personId));
     expect(all).toHaveLength(2);
     const selected = all.filter((d) => d.status === "selected");
     const archived = all.filter((d) => d.status === "archived");
     expect(selected).toHaveLength(1);
     expect(archived).toHaveLength(1);
     // still queued
-    const [p] = await db.select().from(schema.prospects).where(eq(schema.prospects.id, prospectId));
+    const [p] = await db.select().from(schema.person).where(eq(schema.person.id, personId));
     expect(p.status).toBe("queued");
   });
 });

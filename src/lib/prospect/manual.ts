@@ -1,11 +1,11 @@
 import "server-only";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
-import { prospects } from "@/lib/db/schema";
+import { person } from "@/lib/db/schema";
 
 // Manual lead entry (ADR-0010): the CRM user adds a known person by hand. `name` is required
 // (the per-origin CHECK enforces it for origin = manual); the rest is optional identity. The
-// prospect is born `origin = manual`, no signal, status `new`, then qualified by prospectId.
+// prospect is born `origin = manual`, no signal, status `new`, then qualified by personId.
 // `origin` itself is code-set (never user input), so it needs no input-Zod.
 export const manualLeadSchema = z.object({
   name: z.string().trim().min(1, "name is required"),
@@ -22,7 +22,7 @@ function orNull(v: string | undefined): string | null {
 export async function addManualLead(input: ManualLeadInput): Promise<string> {
   const parsed = manualLeadSchema.parse(input);
   const [row] = await getDb()
-    .insert(prospects)
+    .insert(person)
     .values({
       origin: "manual",
       status: "new",
@@ -31,6 +31,6 @@ export async function addManualLead(input: ManualLeadInput): Promise<string> {
       company: orNull(parsed.company),
       linkedinUrl: orNull(parsed.linkedinUrl),
     })
-    .returning({ id: prospects.id });
+    .returning({ id: person.id });
   return row.id;
 }

@@ -54,7 +54,9 @@ personas are:
 - **Prospect (end recipient)** - the person who ultimately receives the human-sent touch,
   through whatever channel it targets (LinkedIn first). Two facts shape the system boundary:
   their personal data enters the system (third-party PII), and they are reached only by a
-  manual human action, never automated sending (D2).
+  manual human action, never automated sending (D2). The same boundary holds for an **engagement
+  target** - a peer or buyer whose post the CRM user comments on: their post data enters the system,
+  and the human posts every comment by hand (D2).
 
 ## Primary journey
 
@@ -66,22 +68,30 @@ generative output (the thesis above). The runtime flows in
 must stay consistent with it.
 
 1. Configure ICP, profile, and signal sources - anchor view: config (occasional).
-2. Pull raw source records from the configured sources - background job: signal scan.
-3. Normalize and expand company/content records into people - background job (a provider or
-   self-host scraping).
-4. Qualify each prospect 1-5 against the ICP and gate at >= 3 - background job: qualifier
-   (LLM provider).
+2. Pull raw source records from the configured sources - background job: signal scan; an advisory,
+   type-keyed rubric scores each new signal by intent.
+3. Triage the inbox: approve (route to a Person, a Company, or a peer-author + Post) or dismiss -
+   every signal waits, no per-source bypass - anchor view: the Queue triage lane (ADR-0013).
+4. Qualify each approved `type = prospect` person 1-5 against the ICP and gate at >= 3 - background
+   job: qualifier (LLM provider). The triage score was advisory; the durable per-person Scoring is
+   created here, after approval.
 5. Optionally deep-enrich a qualified prospect into a full dossier - background job (a
    provider or self-host scraping). **User-triggered and optional by default** (from a
    prospect's detail or a batch grid multi-select), with an opt-in auto-enrich setting;
    not an automatic stage ([ADR-0007](adr/0007-user-triggered-optional-enrichment.md)).
 6. Draft a first touch, if drafting is enabled - background job (LLM provider). By default
    drafted from the signal; re-drafted from the dossier when a prospect is enriched.
-7. Review the dossier and draft, then act through the chosen channel - anchor view:
-   review/approve queue (high judgment).
+7. Review the dossier and draft, then act through the chosen channel - anchor view: the Queue's
+   send lane (high judgment).
 8. Track the outcome against the original score - background job + tracking.
 
-Throughout, the CRM user works from the prospect/company list (an anchor view) to filter,
+Alongside the outreach loop, the **engagement motion**: flag a person `monitored`, fetch or scan their
+recent posts into the **Feed** (anchor view), open a post, generate an AI comment grounded in the
+person's info and the global comment guidance, edit it, and post it manually - the human posts every
+comment (D2). Peers are tracked and scored against the peer rubric for engagement, not run through the
+draft/send funnel (ADR-0015 / ADR-0017 / ADR-0018).
+
+Throughout, the CRM user works from the person/company list (an anchor view) to filter,
 tag, and open dossiers.
 
 An interactive, clickable view of this journey is being assembled as the prototype app
@@ -96,12 +106,13 @@ it is wired.
 | D2 | Automate intelligence; the LinkedIn action stays human-assisted. | The old stack's failure and ban risk were entirely in the action layer. ToS-safe, GTM-aligned. |
 | D3 | Signals are the top of funnel, not CSV. | Crunchbase ($100/mo) is gone. Signal listening also fuels the comment-first motion. |
 | D4 | All scraping/enrichment behind one `SignalSource` / `EnrichmentProvider` interface. Self-host Puppeteer/Playwright for cheap/public sources, Apify for authenticated/deep. | A port of `job-monitor`'s `ScraperBase`. Per-source cost knob; Apify keeps detection risk off the user's own account. (ADR-0002) |
-| D5 | Qualifier = port of `job-monitor`'s static 1-5 ICP scorer (alert at >= 3, platform-aware, structured output, anti-hallucination). Qualify uses the cheap signal as the cost gate; the first-touch draft is a **separate** LLM call after deep enrichment, grounded in the dossier (per the pipeline order). Refined by ADR-0005: the score is recorded per person (a Scoring against the prospect), not on the shared signal (ADR-0005 now superseded by ADR-0010, which keeps the per-person score and fan-out and adds the manual origin). Refined by ADR-0007: the draft is from the signal by default and enrichment is optional/user-triggered (re-drafting from the dossier), not an automatic pre-draft stage. | Proven, cheap scorer, already written (M2). Splitting the draft out of job-monitor's bundled call is the one evolution. Ordering resolved at the C4 L2 review, 2026-05-24; enrichment made optional/user-triggered by ADR-0007 (2026-06-01); manual-origin prospects added by ADR-0010 (2026-06-04). |
+| D5 | Qualifier = port of `job-monitor`'s static 1-5 ICP scorer (alert at >= 3, platform-aware, structured output, anti-hallucination). Qualify uses the cheap signal as the cost gate; the first-touch draft is a **separate** LLM call after deep enrichment, grounded in the dossier (per the pipeline order). Refined by ADR-0005: the score is recorded per person (a Scoring against the prospect), not on the shared signal (ADR-0005 now superseded by ADR-0010, which keeps the per-person score and fan-out and adds the manual origin). Refined by ADR-0007: the draft is from the signal by default and enrichment is optional/user-triggered (re-drafting from the dossier), not an automatic pre-draft stage. Further refined by ADR-0013: under universal triage the score is demoted from an auto-gate to an advisory hint shown at triage; the durable per-person Scoring is still created after approval, by the qualify job. | Proven, cheap scorer, already written (M2). Splitting the draft out of job-monitor's bundled call is the one evolution. Ordering resolved at the C4 L2 review, 2026-05-24; enrichment made optional/user-triggered by ADR-0007 (2026-06-01); manual-origin prospects added by ADR-0010 (2026-06-04). |
 | D6 | The ICP rubric becomes config-as-data, not a hardcoded prompt. | Required for reuse by other CRM users and for the config UI. |
 | D7 | Log outcomes against scores from day one; outcome-driven tuning of the bar is a later additive milestone. | Lets the feedback loop become additive, not a migration. The learning loop is the "neo" differentiator. |
 | D8 | Entry point is configurable: multiple source types (LinkedIn search, CSV of companies, Google alerts, X posts, ...). | Already proven across 11 platforms in `job-monitor`. A new source is a new adapter, not a new pipeline. |
 | D9 | LLM access is provider-agnostic behind an `LLMProvider` port: a provider-neutral structured-output contract (JSON Schema + Zod), with Anthropic as the default adapter, not a binding. | Avoid single-vendor lock-in on the highest-value path (qualify + draft); the contract is provider-neutral anyway. (ADR-0003) |
 | D10 | PII field minimization and sub-processor controls attach at the qualify boundary; earlier pipeline stages do not constrain data shape. Provisional, deferred until productization. | Single designated seam for data-processor controls when productized; avoids scattering minimization across adapters. (D1; system-design cross-cutting) |
+| D11 | Universal triage is the intake gate: every signal awaits a human approve/dismiss before any entity is created; no per-source bypass. The ICP score is advisory at triage, not an auto-gate. | Keeps the human in control of what enters the CRM as broad/noisy sources and peers (not just buyers) join the funnel; reworks the shipped auto-fan-out-then-auto-gate intake. ([ADR-0013](adr/0013-universal-triage-intake.md), refining ADR-0005's fan-out trigger; with ADR-0014..0018 for the engagement motion.) |
 
 ## 4. Pipeline architecture
 
@@ -109,23 +120,34 @@ it is wired.
   [ configurable source adapters ]  ── raw items (person | company | content)
                  │
                  ▼
-  NORMALIZE + EXPAND            person passes through;
-                               company/content expand to people (Apify)
+  SIGNALS (deduped, immutable) ──► ADVISORY FILTER (type-keyed rubric: icp | peer | company; advisory hint only)
                  │
                  ▼
-  QUALIFY  (1-5 ICP scorer) ──► >= 3 ──────────────► DRAFT touch ─► [ HUMAN QUEUE ] ─► you act ─► TRACK + measure
-   the cost gate                 │   (default path)  (profile config   anchor view,        manual,        outcomes logged
-   and noise cut                 └─► DEEP ENRICH ─┘   + signal ctx)     high-judgment       ToS-safe       against the score (D7)
-                                     (optional, user- or auto-triggered; Apify per prospect; re-drafts from the dossier)
+  TRIAGE  [ HUMAN INBOX = Queue triage lane ]  approve / dismiss
+   every signal waits, no per-source bypass (ADR-0013)
+                 │ approve routes by signal kind:
+                 │   company ─► COMPANY
+                 │   content ─► PERSON(type = peer) + POST ─┐
+                 │   person  ─► PERSON(type = prospect)     │
+                 ▼                                          ▼
+  QUALIFY (1-5 ICP scorer) ─► >= 3 ─► DRAFT ─► [ SEND     ENGAGEMENT MOTION
+   per-person Scoring          │      touch    QUEUE ]      monitor ─► fetch / scan POSTS ─► FEED
+   (after approval, D5)        │               anchor        ─► AI COMMENT ─► you post it (manual, D2)
+                 │             └─► DEEP ENRICH ─┘ view
+                 ▼               (optional; re-drafts from the dossier)
+   you act (manual, ToS-safe) ─► TRACK + measure outcomes vs the score (D7)
 ```
 
-Deep enrichment is **optional and user-triggered by default** (with an opt-in auto-enrich
-setting), not an automatic stage - the default path is qualify -> draft from the signal, and
-enrichment is a user/auto-triggered side-step that re-drafts from the dossier
-([ADR-0007](adr/0007-user-triggered-optional-enrichment.md), refining D5).
+Under universal triage every signal lands in the inbox; an advisory, type-keyed rubric hint helps the
+human decide, but never auto-gates (ADR-0013/0017). Approval routes by kind to a Person, a Company, or
+a peer-author + Post; only a `type = prospect` person enters the qualify -> draft -> send funnel. Deep
+enrichment stays **optional and user-triggered by default**, re-drafting from the dossier
+([ADR-0007](adr/0007-user-triggered-optional-enrichment.md), refining D5). The engagement motion runs
+alongside: monitor a person, fetch or scan their posts into a Feed, generate an AI comment, and post it
+by hand ([ADR-0018](adr/0018-engagement-artifacts-post-comment.md), D2).
 
-Anchor views (the only hand-built UI): **ICP/profile config, lead list, review/approve
-queue.** Everything else is jobs + generative output.
+Anchor views (the only hand-built UI): **ICP/profile config, lead list, the Queue (triage + send
+lanes), and the Feed.** Everything else is jobs + generative output.
 
 The system-level boundary view - the system as one box, its actors, and the external
 systems it depends on - is in [docs/architecture/system-context.md](architecture/system-context.md).
@@ -153,9 +175,12 @@ ADR-0005's signal_id-NOT-NULL totality while preserving the fan-out). Model both
 
 Canonical nouns: **Source** (configured origin, config-as-data), **Connector** (module that
 fetches and normalizes one source type), **RawItem** (normalized, un-deduped), **Signal**
-(deduped, persisted), **Prospect** (a person under evaluation, fanned out from a signal or entered manually),
-**Scoring** (the per-person ICP rating). The connector boundary - how a source plugs in - is the
-single, pluggable interface of D4. The full data model (ERD, lifecycle, events) is promoted in
+(deduped, persisted), **SignalDecision** (the human triage verdict on a signal), **Person** (renamed
+from Prospect - a tracked person with a `type` of prospect or peer; fanned out from a signal on
+approval, or entered manually), **Company** (first-class, created when a company signal is approved),
+**Scoring** (the per-person ICP/peer rating), **Post** and **Comment** (the engagement artifacts - a
+person's content and the AI-drafted, human-posted reply), **Comment guidance** (global comment config).
+The connector boundary - how a source plugs in - is the single, pluggable interface of D4. The full data model (ERD, lifecycle, events) is promoted in
 [docs/architecture/domain-model.md](architecture/domain-model.md) and the ubiquitous language in
 [docs/architecture/glossary.md](architecture/glossary.md).
 
@@ -242,13 +267,22 @@ In:
 - Assisted action: queue hands you the drafted touch + research dossier + a deep link;
   you act manually on LinkedIn. LinkedIn-first channel.
 - Status tracking + outcome logging against scores
+- Universal triage inbox: every signal awaits a human approve/dismiss (the Queue triage lane), with an
+  advisory type-keyed rubric hint; no per-source bypass (ADR-0013 / ADR-0014 / ADR-0017)
+- Person model: Person with `type` (prospect | peer) + `monitored`; Company as a first-class entity
+  (ADR-0015 / ADR-0016)
+- Engagement motion: monitor people, fetch/scan their posts, a Feed, and AI-drafted comments the human
+  posts (ADR-0018)
 
 Deferred:
 - Outcome-driven tuning of the precision bar (data accrues now per D7)
 - Full content surface (post/carousel) and bidding surface
 - Additional channels (email via the `EmailSender` interface, already designed)
+- A chat-configured source scanner; the bridge-finding connection graph (who is connected to the ICP);
+  a comment -> outcome learning loop (the engagement analog of D7) - all deferred from the
+  content-marketing-engagement slice
 - All multi-tenant plumbing (section 7)
-- Autonomous/automated sending (never, per D2)
+- Autonomous/automated sending or commenting (never, per D2)
 
 ## 9. Open questions
 
@@ -270,6 +304,10 @@ Deferred:
   [docs/architecture/domain-model.md](architecture/domain-model.md) and the component view in
   [docs/architecture/system-design.md](architecture/system-design.md) (Components C4 L3), with
   ADR-0005 (signal -> N prospect fan-out, refines D5) and ADR-0006 (pre-code L3 view as living canon).
+- **The intake gate - does a signal auto-create a prospect, or wait for a human? RESOLVED** by the
+  `content-marketing-engagement` change: universal triage (ADR-0013) - every signal awaits a human
+  approve/dismiss, and the ICP score is advisory at triage, not an auto-gate. The same change settles
+  the engagement motion and the Person/Company/Post/Comment model (ADR-0014..0018).
 - Adapter shipping order beyond the first two person-yielding sources.
 - When the feedback-loop / eval milestone lands (data accrues from day one regardless).
 - Exact "assisted action" UI affordances - being explored via the review/approve queue wireframe (`src/app/prototype/review-queue`); see the [anchor-view wireframes explore note](explore/2026-05-26-anchor-view-wireframes.md).

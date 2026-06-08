@@ -42,7 +42,7 @@ describe.skipIf(!url)("review-queue: read-model + transitions (integration)", ()
       schema.drafts,
       schema.dossiers,
       schema.scorings,
-      schema.prospects,
+      schema.person,
       schema.signals,
       schema.scans,
       schema.sources,
@@ -61,8 +61,8 @@ describe.skipIf(!url)("review-queue: read-model + transitions (integration)", ()
     await qualify.qualifySignal(scan.persistedSignalIds[0], { llm: scorer(score) });
     const [p] = await getDb()
       .select()
-      .from(schema.prospects)
-      .where(eq(schema.prospects.signalId, scan.persistedSignalIds[0]));
+      .from(schema.person)
+      .where(eq(schema.person.signalId, scan.persistedSignalIds[0]));
     if (score >= 3) await draft.draftProspect(p.id, { llm: drafter() });
     return p.id;
   }
@@ -88,7 +88,7 @@ describe.skipIf(!url)("review-queue: read-model + transitions (integration)", ()
     await closeDb();
   });
 
-  it("lists queued prospects with their draft and score; excludes non-queued", async () => {
+  it("lists queued person with their draft and score; excludes non-queued", async () => {
     const queued = await makeQueued(4);
     const belowBar = await makeQueued(2); // not drafted, stays below_bar
 
@@ -103,14 +103,14 @@ describe.skipIf(!url)("review-queue: read-model + transitions (integration)", ()
   it("acts and dismisses only from queued (no-op otherwise)", async () => {
     const a = await makeQueued(4);
     expect((await transitions.actProspect(a)).changed).toBe(true);
-    const [pa] = await getDb().select().from(schema.prospects).where(eq(schema.prospects.id, a));
+    const [pa] = await getDb().select().from(schema.person).where(eq(schema.person.id, a));
     expect(pa.status).toBe("acted");
     // acting again is a no-op (no longer queued)
     expect((await transitions.actProspect(a)).changed).toBe(false);
 
     const d = await makeQueued(4);
     expect((await transitions.dismissProspect(d)).changed).toBe(true);
-    const [pd] = await getDb().select().from(schema.prospects).where(eq(schema.prospects.id, d));
+    const [pd] = await getDb().select().from(schema.person).where(eq(schema.person.id, d));
     expect(pd.status).toBe("dismissed");
   });
 
@@ -127,13 +127,13 @@ describe.skipIf(!url)("review-queue: read-model + transitions (integration)", ()
     const [outcome] = await db
       .select()
       .from(schema.outcomes)
-      .where(eq(schema.outcomes.prospectId, id));
+      .where(eq(schema.outcomes.personId, id));
     expect(outcome.result).toBe("booked");
     expect(outcome.scoreAtTime).toBe(4);
     expect(outcome.draftId).not.toBeNull();
     expect(outcome.notes).toBe("call set");
 
-    const [p] = await db.select().from(schema.prospects).where(eq(schema.prospects.id, id));
+    const [p] = await db.select().from(schema.person).where(eq(schema.person.id, id));
     expect(p.status).toBe("closed");
   });
 
@@ -151,7 +151,7 @@ describe.skipIf(!url)("review-queue: read-model + transitions (integration)", ()
     const rows = await getDb()
       .select()
       .from(schema.outcomes)
-      .where(eq(schema.outcomes.prospectId, id));
+      .where(eq(schema.outcomes.personId, id));
     expect(rows).toHaveLength(1);
   });
 });

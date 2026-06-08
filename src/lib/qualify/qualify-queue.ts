@@ -25,11 +25,21 @@ export async function enqueueQualifyInTx(tx: DbTx, signalId: string): Promise<st
 // (not in-transaction): failure surfaces to the user, who can re-trigger. The `singleton`
 // policy + singletonKey keep at most one active qualify job per prospect; combined with the
 // scored-already guard in qualifyProspect, a duplicate enqueue yields one score, one LLM call.
-export async function enqueueQualifyProspect(prospectId: string): Promise<string | null> {
-  return enqueue(QUALIFY_PROSPECT_QUEUE, { prospectId }, { singletonKey: prospectId });
+export async function enqueueQualifyProspect(personId: string): Promise<string | null> {
+  return enqueue(QUALIFY_PROSPECT_QUEUE, { personId }, { singletonKey: personId });
 }
 
-// The downstream handoff (enqueue drafting for qualified prospects, + enrichment when auto) is
+// Enqueue qualification for a person ON the caller's transaction (universal-triage): triage
+// approval creates the Person and enqueues its qualify job in one tx (ADR-0009), so an approved
+// prospect is never stranded without its qualify handoff.
+export async function enqueueQualifyProspectInTx(
+  tx: DbTx,
+  personId: string,
+): Promise<string | null> {
+  return enqueueInTx(tx, QUALIFY_PROSPECT_QUEUE, { personId }, { singletonKey: personId });
+}
+
+// The downstream handoff (enqueue drafting for qualified person, + enrichment when auto) is
 // injected at the composition root as a transaction-aware callback, not imported here, so
 // qualification never depends on drafting - the same seam as scan -> qualify (drafting D-E).
 // `resolveHandoff` runs BEFORE qualifySignal opens its transaction, so any I/O the routing
@@ -60,10 +70,10 @@ export async function registerQualifyProspectWorker(
   options: QualifyWorkerOptions = {},
 ): Promise<void> {
   await getBoss().createQueue(QUALIFY_PROSPECT_QUEUE, { policy: "singleton" });
-  await work<{ prospectId: string }>(QUALIFY_PROSPECT_QUEUE, async (jobs) => {
+  await work<{ personId: string }>(QUALIFY_PROSPECT_QUEUE, async (jobs) => {
     for (const job of jobs) {
       const enqueueNext = options.resolveHandoff ? await options.resolveHandoff() : undefined;
-      await qualifyProspect(job.data.prospectId, { enqueueNext });
+      await qualifyProspect(job.data.personId, { enqueueNext });
     }
   });
 }

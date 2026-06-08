@@ -1,7 +1,7 @@
 # Explore: Content marketing - the engagement motion and a universal triage inbox
 
 - Date: 2026-06-06
-- Decision: pending - to be distilled into ADRs via the `content-marketing-engagement` spec-driven-architecture change (status: drafting)
+- Decision: distilled into ADR-0013..0018 (accepted 2026-06-07) via the `content-marketing-engagement` spec-driven-architecture change. Auto-fan-out was dropped during distillation (see Refinement in Outcome below).
 - Method: spec-kit (clarify + research), adapted
 
 ## Question
@@ -115,12 +115,18 @@ spy/monitoring flag, and a feed-detail screen with AI comment generation.
 
 ## Outcome
 
+> Refinement (2026-06-07): during distillation, **auto-fan-out was dropped entirely**. E2
+> (per-source `auto_fanout` opt-in) and NC3 (its granularity) are superseded - triage is now
+> unconditional, with no per-source bypass. Keeping a bypass would reintroduce the auto-fill the
+> reframe exists to prevent and split intake into two paths. The `sources.auto_fanout` schema
+> delta below is therefore not added. The rest of E1-E10 stands.
+
 Locked decisions (E1-E10):
 
 | # | Decision |
 |---|----------|
 | E1 | Universal triage: all signals land in an inbox; human approves/dismisses. |
-| E2 | Auto-fan-out optional, **per-source** (a boolean on `sources`), like `auto_enrich`. |
+| E2 | ~~Auto-fan-out optional, **per-source** (a boolean on `sources`), like `auto_enrich`.~~ Superseded 2026-06-07: auto-fan-out dropped, triage is unconditional (see Refinement above). |
 | E3 | One person table; `type` (prospect\|peer) + `monitored` flag; **rename `prospects` -> `person`**. |
 | E4 | Company is a first-class entity (`companies`). |
 | E5 | Approve standalone content -> author as `person(type=peer)` + attached post. |
@@ -133,18 +139,18 @@ Locked decisions (E1-E10):
 Deferred: chat-configured scanner (T6); bridge-finding connection graph (2b heavy
 reading); comment -> outcome learning loop (a D7-style engagement loop).
 
-Schema deltas: `sources` + `auto_fanout`; `prospects` -> `person` + `type` +
+Schema deltas: `prospects` -> `person` + `type` +
 `monitored`; `rubric` + `kind`; `settings` + comment guidance; new `companies`,
-`posts`, `comments`, `signal_decisions`.
+`posts`, `comments`, `signal_decisions`. (The `sources` + `auto_fanout` delta was
+dropped per the 2026-06-07 refinement.)
 
 Surfaces: one **Queue** (kind = triage | send); a separate **Feed** (monitored people's
 posts, draft+post comments inline); the **person detail** gains on-demand posts +
-activity + comment history; **config** gains per-source auto-fan-out, comment guidance,
-the peer rubric.
+activity + comment history; **config** gains comment guidance and the peer rubric.
 
 Code slices (after the architecture is ratified): (1) posts + "get latest posts" on the
 person card; (2) monitored flag + Feed + activity scan; (3) AI comment generation +
-global guidance; (4) universal triage inbox + per-source auto-fan-out + company entity +
+global guidance; (4) universal triage inbox + company entity +
 content->peer routing + peer rubric/type. Slices 1-3 are additive; slice 4 is the
 invasive reframe and carries the superseding ADRs.
 

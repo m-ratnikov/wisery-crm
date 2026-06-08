@@ -41,7 +41,7 @@ export async function draftMessage(
     `Voice: ${profile.voice}`,
     `Case studies: ${profile.caseStudies.map((c) => `${c.title} - ${c.result}`).join("; ")}`,
     "",
-    "## Prospect signal",
+    "## Person signal",
     `kind: ${subject.kind}`,
     JSON.stringify(subject.payload, null, 2),
   ];

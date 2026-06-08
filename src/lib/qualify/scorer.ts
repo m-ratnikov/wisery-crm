@@ -1,6 +1,7 @@
 import "server-only";
 import { z } from "zod";
 import { getActiveRubric } from "@/lib/icp/config";
+import type { RubricKind } from "@/lib/icp/schema";
 import { getLLM } from "@/lib/llm";
 import type { LLMProvider } from "@/lib/llm/provider";
 import type { PersonSubject } from "@/lib/prospect/identity";
@@ -37,11 +38,12 @@ const SCORE_MAX_TOKENS = 512;
 
 export async function scoreProspect(
   subject: PersonSubject,
-  opts: { llm?: LLMProvider } = {},
+  opts: { llm?: LLMProvider; rubricKind?: RubricKind } = {},
 ): Promise<ScoredProspect> {
-  const active = await getActiveRubric();
+  const rubricKind: RubricKind = opts.rubricKind ?? "icp";
+  const active = await getActiveRubric(rubricKind);
   if (!active) {
-    throw new Error("no active ICP rubric; seed or configure one before qualifying");
+    throw new Error(`no active ${rubricKind} rubric; seed or configure one before scoring`);
   }
   const llm = opts.llm ?? getLLM();
 

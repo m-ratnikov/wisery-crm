@@ -164,6 +164,14 @@ artifacts:
 
 
       Conventions: Mermaid for all diagrams. No em-dashes (use " - ").
+
+
+      Validate the diagrams before completing this step: run the project's Mermaid
+      parser check (`npx vitest run tests/mermaid.test.ts`, which runs `mermaid.parse`
+      over every block in the change folder) and fix any that do not parse - a block
+      that fails the parser will not render and blocks the gate (docs/verification-gate.md,
+      Mechanical checks). Common trap: a `;` inside a sequence-message or state-transition
+      label terminates the statement - use a comma instead.
     requires:
       - use-cases
   - id: system-design
@@ -228,6 +236,14 @@ artifacts:
 
 
       Conventions: Mermaid for all diagrams. No em-dashes (use " - ").
+
+
+      Validate the diagrams before completing this step: run the project's Mermaid
+      parser check (`npx vitest run tests/mermaid.test.ts`, which runs `mermaid.parse`
+      over every block in the change folder) and fix any that do not parse - a block
+      that fails the parser will not render and blocks the gate (docs/verification-gate.md,
+      Mechanical checks). Common trap: a `;` inside a sequence-message or state-transition
+      label terminates the statement - use a comma instead.
     requires:
       - domain-model
   - id: deployment
@@ -262,6 +278,14 @@ artifacts:
 
 
       Conventions: Mermaid for all diagrams. No em-dashes (use " - ").
+
+
+      Validate the diagrams before completing this step: run the project's Mermaid
+      parser check (`npx vitest run tests/mermaid.test.ts`, which runs `mermaid.parse`
+      over every block in the change folder) and fix any that do not parse - a block
+      that fails the parser will not render and blocks the gate (docs/verification-gate.md,
+      Mechanical checks). Common trap: a `;` inside a sequence-message or state-transition
+      label terminates the statement - use a comma instead.
     requires:
       - system-design
   - id: adr
@@ -360,7 +384,11 @@ artifacts:
       verification-gate task here: /verify-gate has passed for each view and ADR being
       promoted (groundedness ledger clean, Chair verdict not rework, the record's
       git hash-object matches current content, and human sign-off recorded for ADRs),
-      per docs/verification-gate.md.
+      per docs/verification-gate.md. Include a separate mechanical-checks task: the
+      Mermaid parser check and link check pass for the change and docs (`npm test`,
+      which runs tests/mermaid.test.ts via `mermaid.parse` over every diagram and
+      tests/arch-links.test.ts) - a diagram that does not parse blocks promotion
+      (docs/verification-gate.md, Mechanical checks).
 
       - **Reconcile the spine**: tasks to update the specific sections of
       docs/product-overview.md this change touches (the locked-decisions

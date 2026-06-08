@@ -1,7 +1,7 @@
 import "server-only";
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { dossiers, drafts, prospects, scorings, signals, sources } from "@/lib/db/schema";
+import { dossiers, drafts, person, scorings, signals, sources } from "@/lib/db/schema";
 
 // The prospect-list read-model (prospect-list D-A/D-B): one row per prospect with its
 // disposition, latest score, source, and the DERIVED enriched/drafted facets (a dossier /
@@ -51,16 +51,16 @@ export function displayName(row: {
 export function prospectsWithSignal() {
   return getDb()
     .select({
-      id: prospects.id,
-      status: prospects.status,
-      createdAt: prospects.createdAt,
-      origin: prospects.origin,
-      manualName: prospects.name,
+      id: person.id,
+      status: person.status,
+      createdAt: person.createdAt,
+      origin: person.origin,
+      manualName: person.name,
       payload: signals.payload,
       signalKind: signals.kind,
     })
-    .from(prospects)
-    .leftJoin(signals, eq(signals.id, prospects.signalId));
+    .from(person)
+    .leftJoin(signals, eq(signals.id, person.signalId));
 }
 
 export async function listProspects(): Promise<ProspectListItem[]> {
@@ -68,37 +68,37 @@ export async function listProspects(): Promise<ProspectListItem[]> {
 
   const base = await db
     .select({
-      id: prospects.id,
-      status: prospects.status,
-      createdAt: prospects.createdAt,
-      origin: prospects.origin,
-      manualName: prospects.name,
+      id: person.id,
+      status: person.status,
+      createdAt: person.createdAt,
+      origin: person.origin,
+      manualName: person.name,
       signalKind: signals.kind,
       payload: signals.payload,
       sourceKind: sources.kind,
     })
-    .from(prospects)
-    .leftJoin(signals, eq(signals.id, prospects.signalId))
+    .from(person)
+    .leftJoin(signals, eq(signals.id, person.signalId))
     .leftJoin(sources, eq(sources.id, signals.sourceId))
-    .orderBy(desc(prospects.createdAt));
+    .orderBy(desc(person.createdAt));
 
   // Latest scoring per prospect (newest first; first seen wins).
   const scoreRows = await db
-    .select({ prospectId: scorings.prospectId, score: scorings.score, summary: scorings.summary })
+    .select({ personId: scorings.personId, score: scorings.score, summary: scorings.summary })
     .from(scorings)
     .orderBy(desc(scorings.scoredAt), desc(scorings.id));
   const latestScore = new Map<string, { score: number; summary: string | null }>();
   for (const r of scoreRows) {
-    if (!latestScore.has(r.prospectId))
-      latestScore.set(r.prospectId, { score: r.score, summary: r.summary });
+    if (!latestScore.has(r.personId))
+      latestScore.set(r.personId, { score: r.score, summary: r.summary });
   }
 
   const enrichedIds = new Set(
-    (await db.select({ id: dossiers.prospectId }).from(dossiers)).map((r) => r.id),
+    (await db.select({ id: dossiers.personId }).from(dossiers)).map((r) => r.id),
   );
   const draftedIds = new Set(
     (
-      await db.select({ id: drafts.prospectId }).from(drafts).where(eq(drafts.status, "selected"))
+      await db.select({ id: drafts.personId }).from(drafts).where(eq(drafts.status, "selected"))
     ).map((r) => r.id),
   );
 
@@ -129,26 +129,26 @@ export interface ProspectDetail {
   createdAt: Date;
 }
 
-export async function getProspectDetail(prospectId: string): Promise<ProspectDetail | null> {
+export async function getProspectDetail(personId: string): Promise<ProspectDetail | null> {
   const db = getDb();
-  const [p] = await prospectsWithSignal().where(eq(prospects.id, prospectId)).limit(1);
+  const [p] = await prospectsWithSignal().where(eq(person.id, personId)).limit(1);
   if (!p) return null;
 
   const [sc] = await db
     .select({ score: scorings.score, reason: scorings.reason, summary: scorings.summary })
     .from(scorings)
-    .where(eq(scorings.prospectId, prospectId))
+    .where(eq(scorings.personId, personId))
     .orderBy(desc(scorings.scoredAt), desc(scorings.id))
     .limit(1);
   const [dr] = await db
     .select({ body: drafts.body })
     .from(drafts)
-    .where(and(eq(drafts.prospectId, prospectId), eq(drafts.status, "selected")))
+    .where(and(eq(drafts.personId, personId), eq(drafts.status, "selected")))
     .limit(1);
   const [dos] = await db
     .select({ data: dossiers.data })
     .from(dossiers)
-    .where(eq(dossiers.prospectId, prospectId))
+    .where(eq(dossiers.personId, personId))
     .limit(1);
 
   return {

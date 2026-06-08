@@ -1,10 +1,10 @@
 import "server-only";
 import { desc, eq, inArray } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { dossiers, drafts, prospects, scorings } from "@/lib/db/schema";
+import { dossiers, drafts, person, scorings } from "@/lib/db/schema";
 import { displayName, prospectsWithSignal } from "@/lib/prospect/read";
 
-// The review-queue read-model (review-queue D-B): the open worklist - prospects that are
+// The review-queue read-model (review-queue D-B): the open worklist - person that are
 // `queued` (review + act) or `acted` (awaiting an outcome log) - with everything a card
 // needs: name, status, latest score + reason, the selected draft body, and whether a
 // dossier exists. Composed from small queries to avoid join multiplicity.
@@ -23,29 +23,29 @@ export async function listQueue(): Promise<QueueItem[]> {
   const db = getDb();
 
   const base = await prospectsWithSignal()
-    .where(inArray(prospects.status, ["queued", "acted"]))
-    .orderBy(desc(prospects.createdAt));
+    .where(inArray(person.status, ["queued", "acted"]))
+    .orderBy(desc(person.createdAt));
 
   const scoreRows = await db
-    .select({ prospectId: scorings.prospectId, score: scorings.score, reason: scorings.reason })
+    .select({ personId: scorings.personId, score: scorings.score, reason: scorings.reason })
     .from(scorings)
     .orderBy(desc(scorings.scoredAt), desc(scorings.id));
   const latestScore = new Map<string, { score: number; reason: string | null }>();
   for (const r of scoreRows) {
-    if (!latestScore.has(r.prospectId))
-      latestScore.set(r.prospectId, { score: r.score, reason: r.reason });
+    if (!latestScore.has(r.personId))
+      latestScore.set(r.personId, { score: r.score, reason: r.reason });
   }
 
   const draftBody = new Map(
     (
       await db
-        .select({ prospectId: drafts.prospectId, body: drafts.body })
+        .select({ personId: drafts.personId, body: drafts.body })
         .from(drafts)
         .where(eq(drafts.status, "selected"))
-    ).map((r) => [r.prospectId, r.body]),
+    ).map((r) => [r.personId, r.body]),
   );
   const enrichedIds = new Set(
-    (await db.select({ id: dossiers.prospectId }).from(dossiers)).map((r) => r.id),
+    (await db.select({ id: dossiers.personId }).from(dossiers)).map((r) => r.id),
   );
 
   return base.map((r) => ({

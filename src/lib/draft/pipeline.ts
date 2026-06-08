@@ -1,7 +1,7 @@
 import "server-only";
 import { and, eq } from "drizzle-orm";
 import { getDb } from "@/lib/db";
-import { dossiers, drafts, prospects } from "@/lib/db/schema";
+import { dossiers, drafts, person } from "@/lib/db/schema";
 import { getUserProfile } from "@/lib/icp/config";
 import type { LLMProvider } from "@/lib/llm/provider";
 import { loadActionableProspect } from "@/lib/prospect/load";
@@ -11,13 +11,13 @@ import { draftMessage } from "@/lib/draft/drafter";
 // signal, persist the selected draft (archiving any prior), and move the prospect to
 // queued (ADR-0008). The LLM provider is injectable so tests run against the fake.
 export interface DraftOutcome {
-  prospectId: string;
+  personId: string;
   drafted: boolean;
   skipped: boolean;
 }
 
 export async function draftProspect(
-  prospectId: string,
+  personId: string,
   opts: { llm?: LLMProvider; force?: boolean } = {},
 ): Promise<DraftOutcome> {
   const db = getDb();
@@ -25,9 +25,9 @@ export async function draftProspect(
   // Only a qualified or already-queued prospect is draftable; `queued` is allowed so a
   // re-draft (a user "regenerate" or enrichment's richer re-draft) can run on a prospect
   // already in the queue. A below-bar / acted / closed prospect skips.
-  const loaded = await loadActionableProspect(prospectId);
+  const loaded = await loadActionableProspect(personId);
   if (!loaded) {
-    return { prospectId, drafted: false, skipped: true };
+    return { personId, drafted: false, skipped: true };
   }
   const { subject } = loaded;
 
@@ -38,10 +38,10 @@ export async function draftProspect(
     const existing = await db
       .select({ id: drafts.id })
       .from(drafts)
-      .where(and(eq(drafts.prospectId, prospectId), eq(drafts.status, "selected")))
+      .where(and(eq(drafts.personId, personId), eq(drafts.status, "selected")))
       .limit(1);
     if (existing.length > 0) {
-      return { prospectId, drafted: false, skipped: true };
+      return { personId, drafted: false, skipped: true };
     }
   }
 
@@ -53,7 +53,7 @@ export async function draftProspect(
   const [dossier] = await db
     .select({ data: dossiers.data })
     .from(dossiers)
-    .where(eq(dossiers.prospectId, prospectId))
+    .where(eq(dossiers.personId, personId))
     .limit(1);
 
   // Generate outside the transaction (no network inside a tx).
@@ -67,9 +67,9 @@ export async function draftProspect(
     await tx
       .update(drafts)
       .set({ status: "archived" })
-      .where(and(eq(drafts.prospectId, prospectId), eq(drafts.status, "selected")));
+      .where(and(eq(drafts.personId, personId), eq(drafts.status, "selected")));
     await tx.insert(drafts).values({
-      prospectId,
+      personId,
       profileId: profile.id,
       body: message.body,
       status: "selected",
@@ -77,8 +77,8 @@ export async function draftProspect(
       promptVersion: message.promptVersion,
       model: message.model,
     });
-    await tx.update(prospects).set({ status: "queued" }).where(eq(prospects.id, prospectId));
+    await tx.update(person).set({ status: "queued" }).where(eq(person.id, personId));
   });
 
-  return { prospectId, drafted: true, skipped: false };
+  return { personId, drafted: true, skipped: false };
 }
