@@ -1,0 +1,28 @@
+# ADR-0020: Configurable pipelines replace the fixed Person status enum
+
+- Status: accepted - owner sign-off 2026-06-08
+- Date: 2026-06-08
+- Supersedes: ADR-0008 (Prospect.status is a disposition)
+- Refines: none
+- Source: docs/explore/2026-06-08-engagement-rework-queue-pipelines-messages.md; docs/architecture/domain-model.md (Lifecycle)
+
+## Context
+
+ADR-0008 fixed `Person.status` as a single category - the person's disposition in the human-facing pipeline - with a mutually-exclusive seven-value enum (`new`, `below_bar`, `qualified`, `queued`, `acted`, `dismissed`, `closed`), validated by `prospectStatusSchema`. That decision was correct for a fixed funnel, but the product is a configurable sales CRM: the owner's workflow is a Breakcold-style kanban where the operator defines the columns. A fixed enum cannot express that. Two of the enum's values are also being removed for orthogonal reasons: `queued` belonged to the drafting stage that ADR-0019 deletes, and `below_bar`/`qualified` encoded scoring disposition that is more correctly read from the latest `Scoring` (score >= 3) than stored as status - the same derived-vs-stored argument ADR-0008 itself made for "enriched"/"drafted". The cost of revisiting now is low: pipelines are not yet built, the system is pre-production single-user, and `Person.status` is a single `text` column whose values can be migrated data-preservingly.
+
+## Decision
+
+We will replace the fixed status enum with configurable pipelines.
+
+- **Two config-as-data entities**: `pipeline` (an ordered set of statuses an operator owns) and `pipeline_status` (one ordered column in a pipeline). These are peers of Rubric and User Profile - seeded from code, then CRUD-able by the operator (add, rename, reorder, remove).
+- **`Person.status` becomes a foreign key** into `pipeline_status`, not a `text` enum; `Person.pipeline_id` is added alongside so membership is explicit. The agreement between `pipeline_id` and `status` is enforced by the database, not by an app-layer check: a composite foreign key `(pipeline_id, status_id)` references a `pipeline_status` unique key `(pipeline_id, id)`, so a Person can never point at a status of another pipeline. The `prospectStatusSchema` Zod enum is retired in favor of the DB-backed vocabulary.
+- **The default pipeline vocabulary is frozen here** (the backfill and the seed both depend on it): one default pipeline ("LinkedIn outreach") seeded with ordered statuses `Cold`, `CR Sent`, `CR Accepted`, `FU Sent`, `Conversation`, `Discovery call`, `Not Interested`, `Ghosted`, `Proposal Sent`, `On Hold` (CR = connection request, FU = follow-up). `Cold` is the entry status every newly created Person takes.
+- **Enum -> FK backfill map** (deterministic; over trivial pre-production data): `new`, `below_bar`, `qualified`, `queued` -> `Cold`; `acted` -> `CR Sent`; `dismissed` -> `Not Interested`; `closed` -> `On Hold`. The `acted`/`dismissed`/`closed` mappings are a judgment call (the old status alone does not carry the channel step or the outcome - that is in `Outcome`); the backfill synthesizes no `Outcome` row and does not cross-check one, so a backfilled placement is a pipeline column only, confirmable by the operator and re-placeable after backfill.
+- **Qualification leaves status**: it is a read, not a stored status - `qualified` / `below_bar` / `unassessed` derived from the latest buyer-rubric `Scoring` (ADR-0019), decoupled from pipeline position. `below_bar`/`qualified`/`queued` are not pipeline statuses.
+- **Pipelines scope to People only in v1** (Companies / Deals later).
+- **Status deletion is RESTRICT while occupied**: a `pipeline_status` that people still reference cannot be deleted; the operator must reassign its occupants first (the decision is surfaced to the operator, not a silent cascade).
+- **Migration is TTY-safe and additive-then-swap**, in three ordered Drizzle migrations so it is data-preserving and never triggers a drizzle-kit interactive rename/drop prompt: (1) add the nullable `pipeline_id` + `status` FK columns, seed the default pipeline idempotently (a data migration keyed on a unique `pipeline.slug` / single-default constraint with `ON CONFLICT DO NOTHING`, run at migrate time, never per-boot), and backfill each person via the map above; (2) set the FK columns NOT NULL; (3) drop the old `text status` column and retire `prospectStatusSchema`. Each migration's SQL is hand-inspected; drizzle-kit is never run from a reviewer.
+
+## Consequences
+
+Easier: the operator gets the configurable pipeline the CRM's value proposition promises; status stops being overloaded with scoring and artifact facts (the derived-vs-stored cleanup ADR-0008 began, completed); adding a column is data, not a migration. Harder/accepted: `Person.status` reads now resolve a FK (a join) rather than a column literal; the seeded vocabulary and backfill map are now load-bearing and frozen above rather than left to implementation; a NOT NULL FK on a non-empty table forces the three-migration sequence rather than one. Rules out: representing disposition, scoring, or artifact existence as a fixed status value. This supersedes ADR-0008 in full: its seven-value enum is retired and its single-disposition status model gives way to a configurable pipeline; ADR-0008's principle that artifact existence is derived from relations (not status) is carried forward and extended to scoring. The domain-model lifecycle, the `prospectStatusSchema`, and any read keyed on the literal status values are revised at promotion.

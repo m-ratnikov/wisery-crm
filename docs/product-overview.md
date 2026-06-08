@@ -33,7 +33,7 @@ first CRM user (Michael) is just tenant #1's config.
   This is also what `gtm.md` mandates ("no third-party automation tools", quality over
   volume), so the constraint and the strategy agree.
 - **Minimal interface + generative outputs.** Hand-built anchor views exist only where
-  judgment lives: ICP/profile config, the lead list, and the review/approve queue.
+  judgment lives: ICP/profile config, the lead list, and the unified Queue.
   Everything else is background jobs and generative output.
 - **Quality over volume is a feature, not a limitation.** The product encodes
   "10 genuine relationships > 250 automated messages" rather than fighting it.
@@ -47,9 +47,9 @@ personas are:
 
 - **CRM user (primary operating persona)** - a freelancer, solopreneur, developer,
   consultant, or other operator running outreach for their own book of business (tenant #1).
-  Wants qualified prospects and an optional drafted first touch without wiring five tools
-  together, and acts manually to stay within each channel's terms of service. Everything
-  personal to one CRM user (ICP, profile, case studies, voice) is per-tenant
+  Wants qualified prospects and AI assistance on demand (a generated message or comment, a re-score,
+  an enrich) without wiring five tools together, and acts manually to stay within each channel's terms
+  of service. Everything personal to one CRM user (ICP, profile, case studies, voice) is per-tenant
   config-as-data (D1).
 - **Prospect (end recipient)** - the person who ultimately receives the human-sent touch,
   through whatever channel it targets (LinkedIn first). Two facts shape the system boundary:
@@ -61,7 +61,7 @@ personas are:
 ## Primary journey
 
 The daily loop. "Anchor view" = one of the few hand-built UI screens the product commits to
-(ICP/profile config, lead list, review/approve queue); everything else is background jobs or
+(ICP/profile config, lead list, the unified Queue, the Feed); everything else is background jobs or
 generative output (the thesis above). The runtime flows in
 [docs/architecture/system-design.md](architecture/system-design.md) and the boundary flow in
 [system-context.md](architecture/system-context.md) are dynamic views of this journey and
@@ -70,26 +70,28 @@ must stay consistent with it.
 1. Configure ICP, profile, and signal sources - anchor view: config (occasional).
 2. Pull raw source records from the configured sources - background job: signal scan; an advisory,
    type-keyed rubric scores each new signal by intent.
-3. Triage the inbox: approve (route to a Person, a Company, or a peer-author + Post) or dismiss -
-   every signal waits, no per-source bypass - anchor view: the Queue triage lane (ADR-0013).
-4. Qualify each approved `type = prospect` person 1-5 against the ICP and gate at >= 3 - background
-   job: qualifier (LLM provider). The triage score was advisory; the durable per-person Scoring is
-   created here, after approval.
-5. Optionally deep-enrich a qualified prospect into a full dossier - background job (a
-   provider or self-host scraping). **User-triggered and optional by default** (from a
-   prospect's detail or a batch grid multi-select), with an opt-in auto-enrich setting;
-   not an automatic stage ([ADR-0007](adr/0007-user-triggered-optional-enrichment.md)).
-6. Draft a first touch, if drafting is enabled - background job (LLM provider). By default
-   drafted from the signal; re-drafted from the dossier when a prospect is enriched.
-7. Review the dossier and draft, then act through the chosen channel - anchor view: the Queue's
-   send lane (high judgment).
-8. Track the outcome against the original score - background job + tracking.
+3. Triage the unified **Queue**: approve (Create a Person, a Company, or a peer-author + Post) or
+   dismiss - every signal waits, no per-source bypass; a decided item drops out. Approval creates the
+   entity and promotes the signal's advisory score into the person's `advisory`-provenance initial
+   assessment Scoring (no LLM) when an active rubric of its kind exists - anchor view: the Queue
+   ([ADR-0013](adr/0013-universal-triage-intake.md), [ADR-0019](adr/0019-generation-and-scoring-on-demand.md)).
+4. Open a person and work them in the **workspace** - all on demand, each a synchronous action that
+   writes one row: generate a LinkedIn message (connection-request or DM, ADR-0021), generate a comment
+   on a post, re-score against the ICP (the durable LLM Scoring), or deep-enrich into a dossier
+   ([ADR-0007](adr/0007-user-triggered-optional-enrichment.md), [ADR-0019](adr/0019-generation-and-scoring-on-demand.md)).
+   Qualification (qualified / below_bar / unassessed) is a derived read over the latest ICP Scoring, not
+   a stored status.
+5. Move the person through a **configurable pipeline** by setting its status (the seeded "LinkedIn
+   outreach" default is Cold .. On Hold, CRUD-able) - status is decoupled from whether any message,
+   comment, or dossier exists ([ADR-0020](adr/0020-configurable-pipelines-for-person-status.md)).
+6. Post the generated message or comment manually through the channel and log the outcome against the
+   score - manual, ToS-safe (D2, D7).
 
 Alongside the outreach loop, the **engagement motion**: flag a person `monitored`, fetch or scan their
 recent posts into the **Feed** (anchor view), open a post, generate an AI comment grounded in the
 person's info and the global comment guidance, edit it, and post it manually - the human posts every
-comment (D2). Peers are tracked and scored against the peer rubric for engagement, not run through the
-draft/send funnel (ADR-0015 / ADR-0017 / ADR-0018).
+comment (D2). Peers are tracked and scored against the peer rubric for engagement, not buyer-qualified
+(ADR-0015 / ADR-0017 / ADR-0018).
 
 Throughout, the CRM user works from the person/company list (an anchor view) to filter,
 tag, and open dossiers.
@@ -106,13 +108,16 @@ it is wired.
 | D2 | Automate intelligence; the LinkedIn action stays human-assisted. | The old stack's failure and ban risk were entirely in the action layer. ToS-safe, GTM-aligned. |
 | D3 | Signals are the top of funnel, not CSV. | Crunchbase ($100/mo) is gone. Signal listening also fuels the comment-first motion. |
 | D4 | All scraping/enrichment behind one `SignalSource` / `EnrichmentProvider` interface. Self-host Puppeteer/Playwright for cheap/public sources, Apify for authenticated/deep. | A port of `job-monitor`'s `ScraperBase`. Per-source cost knob; Apify keeps detection risk off the user's own account. (ADR-0002) |
-| D5 | Qualifier = port of `job-monitor`'s static 1-5 ICP scorer (alert at >= 3, platform-aware, structured output, anti-hallucination). Qualify uses the cheap signal as the cost gate; the first-touch draft is a **separate** LLM call after deep enrichment, grounded in the dossier (per the pipeline order). Refined by ADR-0005: the score is recorded per person (a Scoring against the prospect), not on the shared signal (ADR-0005 now superseded by ADR-0010, which keeps the per-person score and fan-out and adds the manual origin). Refined by ADR-0007: the draft is from the signal by default and enrichment is optional/user-triggered (re-drafting from the dossier), not an automatic pre-draft stage. Further refined by ADR-0013: under universal triage the score is demoted from an auto-gate to an advisory hint shown at triage; the durable per-person Scoring is still created after approval, by the qualify job. | Proven, cheap scorer, already written (M2). Splitting the draft out of job-monitor's bundled call is the one evolution. Ordering resolved at the C4 L2 review, 2026-05-24; enrichment made optional/user-triggered by ADR-0007 (2026-06-01); manual-origin prospects added by ADR-0010 (2026-06-04). |
+| D5 | Qualifier = port of `job-monitor`'s static 1-5 ICP scorer (gate at >= 3, platform-aware, structured output, anti-hallucination). The advisory, type-keyed rubric scores each signal at triage as a hint. The durable per-person Scoring is **on-demand**, not an automatic post-approval stage: at approval the signal's advisory score is **promoted** into the person's `advisory`-provenance initial Scoring (no LLM) when an active rubric of its kind exists; a fresh `llm`-provenance Scoring is written only when the user clicks re-score; manual entry is not auto-scored. Qualification (qualified / below_bar / unassessed) is a derived read over the latest ICP Scoring, not a stored status. The score is per person (a Scoring against the prospect), not on the shared signal (ADR-0005, superseded by ADR-0010 which adds the manual origin). The drafting stage that once split off a separate first-touch LLM call is removed; first-touch is an on-demand Message ([ADR-0019](adr/0019-generation-and-scoring-on-demand.md), [ADR-0021](adr/0021-linkedin-message-entity.md), partially superseding ADR-0007's auto-enrich-on-qualify, ADR-0013's post-approval qualify-enqueue, ADR-0017's only-qualify-persists-a-Scoring mechanism, and ADR-0010's manual auto-score). | Proven, cheap scorer, already written (M2). On-demand generation/scoring replaces the auto pipeline per the owner's model (2026-06-08); enrichment made optional/user-triggered by ADR-0007 (2026-06-01); manual-origin prospects added by ADR-0010 (2026-06-04). |
 | D6 | The ICP rubric becomes config-as-data, not a hardcoded prompt. | Required for reuse by other CRM users and for the config UI. |
-| D7 | Log outcomes against scores from day one; outcome-driven tuning of the bar is a later additive milestone. | Lets the feedback loop become additive, not a migration. The learning loop is the "neo" differentiator. |
+| D7 | Log outcomes against scores from day one; outcome-driven tuning of the bar is a later additive milestone. The `advisory`-provenance initial Scoring (and any Outcome bound to it) is excluded from the learning loop via `scorings.provenance`, so the cheap advisory pass never tunes the bar ([ADR-0019](adr/0019-generation-and-scoring-on-demand.md), preserving ADR-0017's purpose). | Lets the feedback loop become additive, not a migration. The learning loop is the "neo" differentiator. |
 | D8 | Entry point is configurable: multiple source types (LinkedIn search, CSV of companies, Google alerts, X posts, ...). | Already proven across 11 platforms in `job-monitor`. A new source is a new adapter, not a new pipeline. |
-| D9 | LLM access is provider-agnostic behind an `LLMProvider` port: a provider-neutral structured-output contract (JSON Schema + Zod), with Anthropic as the default adapter, not a binding. | Avoid single-vendor lock-in on the highest-value path (qualify + draft); the contract is provider-neutral anyway. (ADR-0003) |
+| D9 | LLM access is provider-agnostic behind an `LLMProvider` port: a provider-neutral structured-output contract (JSON Schema + Zod), with Anthropic as the default adapter, not a binding. | Avoid single-vendor lock-in on the highest-value path (scoring + on-demand generation); the contract is provider-neutral anyway. (ADR-0003) |
 | D10 | PII field minimization and sub-processor controls attach at the qualify boundary; earlier pipeline stages do not constrain data shape. Provisional, deferred until productization. | Single designated seam for data-processor controls when productized; avoids scattering minimization across adapters. (D1; system-design cross-cutting) |
-| D11 | Universal triage is the intake gate: every signal awaits a human approve/dismiss before any entity is created; no per-source bypass. The ICP score is advisory at triage, not an auto-gate. | Keeps the human in control of what enters the CRM as broad/noisy sources and peers (not just buyers) join the funnel; reworks the shipped auto-fan-out-then-auto-gate intake. ([ADR-0013](adr/0013-universal-triage-intake.md), refining ADR-0005's fan-out trigger; with ADR-0014..0018 for the engagement motion.) |
+| D11 | Universal triage is the intake gate: every signal awaits a human approve/dismiss before any entity is created; no per-source bypass. The ICP score is advisory at triage, not an auto-gate. This runs in **one unified Queue** - the sole intake surface; the separate Review & approve queue is removed (there is no automatic drafting output to review). | Keeps the human in control of what enters the CRM as broad/noisy sources and peers (not just buyers) join the funnel; reworks the shipped auto-fan-out-then-auto-gate intake. ([ADR-0013](adr/0013-universal-triage-intake.md), refining ADR-0005's fan-out trigger; with ADR-0014..0018 for the engagement motion; the unified Queue + removed review surface per [ADR-0019](adr/0019-generation-and-scoring-on-demand.md).) |
+| D12 | Generation, scoring, and enrichment are **on-demand Person actions**, not automatic pipeline stages: each is a synchronous server action writing one row per click, with LLM/Apify spend only on that click. Approval promotes the advisory score (no LLM); manual entry does not auto-score; the drafting stage, the `draft` worker, the `queued` status, the Review & approve queue, and the durable `qualify-prospect` worker are all retired. | Generation is a feature of the person, not a funnel position; an auto stage spent budget drafting people the user may never contact. Owner directive (2026-06-08). ([ADR-0019](adr/0019-generation-and-scoring-on-demand.md), supersedes-in-part ADR-0007/0010/0013/0017.) |
+| D13 | Person status is a **configurable pipeline**: `Person.status` is a FK into a seeded-but-CRUD-able `pipeline_status` (Breakcold-style kanban), not a fixed enum. The seeded default "LinkedIn outreach" pipeline is Cold, CR Sent, CR Accepted, FU Sent, Conversation, Discovery call, Not Interested, Ghosted, Proposal Sent, On Hold (entry = Cold). | The product is a configurable sales CRM; a fixed seven-value enum cannot express a tenant's pipeline. ([ADR-0020](adr/0020-configurable-pipelines-for-person-status.md), supersedes ADR-0008.) |
+| D14 | LinkedIn outreach is a **Message** entity (connection-request and DM are message types), a sibling of the post-linked Comment, generated on demand. The channel discriminator vs per-channel-table choice is deferred (NC1). | A message's rule (keyed to a person, many per person, carrying a type) differs from a comment's (keyed to a Post); merging loses that. v1 ships LinkedIn-only. ([ADR-0021](adr/0021-linkedin-message-entity.md), refines ADR-0018.) |
 
 ## 4. Pipeline architecture
 
@@ -123,31 +128,38 @@ it is wired.
   SIGNALS (deduped, immutable) ──► ADVISORY FILTER (type-keyed rubric: icp | peer | company; advisory hint only)
                  │
                  ▼
-  TRIAGE  [ HUMAN INBOX = Queue triage lane ]  approve / dismiss
-   every signal waits, no per-source bypass (ADR-0013)
-                 │ approve routes by signal kind:
-                 │   company ─► COMPANY
-                 │   content ─► PERSON(type = peer) + POST ─┐
-                 │   person  ─► PERSON(type = prospect)     │
-                 ▼                                          ▼
-  QUALIFY (1-5 ICP scorer) ─► >= 3 ─► DRAFT ─► [ SEND     ENGAGEMENT MOTION
-   per-person Scoring          │      touch    QUEUE ]      monitor ─► fetch / scan POSTS ─► FEED
-   (after approval, D5)        │               anchor        ─► AI COMMENT ─► you post it (manual, D2)
-                 │             └─► DEEP ENRICH ─┘ view
-                 ▼               (optional; re-drafts from the dossier)
-   you act (manual, ToS-safe) ─► TRACK + measure outcomes vs the score (D7)
+  THE QUEUE  [ THE SOLE HUMAN INBOX ]  Create Person/Company / dismiss
+   every signal waits, no per-source bypass (ADR-0013); a decided item drops out
+                 │ approve routes by signal kind, promoting the advisory score
+                 │ into the person's advisory-provenance initial Scoring (no LLM, ADR-0019):
+                 │   company ─► COMPANY (no Scoring)
+                 │   content ─► PERSON(type = peer) + POST
+                 │   person  ─► PERSON(type = prospect)
+                 ▼
+  PERSON WORKSPACE  [ on-demand actions, each one synchronous click, ADR-0019 ]      ENGAGEMENT MOTION
+   ├─ generate MESSAGE (connection-request | DM, ADR-0021)                            monitor ─► fetch / scan POSTS ─► FEED
+   ├─ generate COMMENT on a post (ADR-0018)                                            ─► AI COMMENT ─► you post it (manual, D2)
+   ├─ RE-SCORE vs the ICP (durable llm Scoring; qualification is a read)
+   ├─ DEEP ENRICH ─► dossier (optional, ADR-0007)
+   └─ set PIPELINE STATUS (configurable: Cold .. On Hold, ADR-0020)
+                 │
+                 ▼
+   you post it (manual, ToS-safe) ─► TRACK + measure outcomes vs the score (D7)
 ```
 
-Under universal triage every signal lands in the inbox; an advisory, type-keyed rubric hint helps the
-human decide, but never auto-gates (ADR-0013/0017). Approval routes by kind to a Person, a Company, or
-a peer-author + Post; only a `type = prospect` person enters the qualify -> draft -> send funnel. Deep
-enrichment stays **optional and user-triggered by default**, re-drafting from the dossier
-([ADR-0007](adr/0007-user-triggered-optional-enrichment.md), refining D5). The engagement motion runs
-alongside: monitor a person, fetch or scan their posts into a Feed, generate an AI comment, and post it
-by hand ([ADR-0018](adr/0018-engagement-artifacts-post-comment.md), D2).
+Under universal triage every signal lands in the one Queue; an advisory, type-keyed rubric hint helps
+the human decide, but never auto-gates (ADR-0013/0017). Approval routes by kind to a Person, a Company,
+or a peer-author + Post, and promotes the advisory score into the person's initial Scoring (no LLM,
+ADR-0019). Post-intake, the person is worked in a **workspace** where generation, re-scoring, and
+enrichment are on-demand actions - each a synchronous click that writes one row, spend incurred only on
+that click ([ADR-0019](adr/0019-generation-and-scoring-on-demand.md)). Status is a **configurable
+pipeline** the operator sets directly ([ADR-0020](adr/0020-configurable-pipelines-for-person-status.md)),
+decoupled from whether any artifact exists. The engagement motion runs alongside: monitor a person,
+fetch or scan their posts into a Feed, generate an AI comment, and post it by hand
+([ADR-0018](adr/0018-engagement-artifacts-post-comment.md), D2).
 
-Anchor views (the only hand-built UI): **ICP/profile config, lead list, the Queue (triage + send
-lanes), and the Feed.** Everything else is jobs + generative output.
+Anchor views (the only hand-built UI): **ICP/profile config, the person list + workspace, the unified
+Queue, and the Feed.** Everything else is jobs + generative output.
 
 The system-level boundary view - the system as one box, its actors, and the external
 systems it depends on - is in [docs/architecture/system-context.md](architecture/system-context.md).
@@ -178,8 +190,10 @@ fetches and normalizes one source type), **RawItem** (normalized, un-deduped), *
 (deduped, persisted), **SignalDecision** (the human triage verdict on a signal), **Person** (renamed
 from Prospect - a tracked person with a `type` of prospect or peer; fanned out from a signal on
 approval, or entered manually), **Company** (first-class, created when a company signal is approved),
-**Scoring** (the per-person ICP/peer rating), **Post** and **Comment** (the engagement artifacts - a
-person's content and the AI-drafted, human-posted reply), **Comment guidance** (global comment config).
+**Scoring** (the per-person ICP/peer rating, carrying a `provenance` of `llm` or `advisory`),
+**Message** (an on-demand LinkedIn message, connection-request or DM), **Post** and **Comment** (the
+engagement artifacts - a person's content and the AI-drafted, human-posted reply), **Pipeline** /
+**Pipeline status** (the configurable status vocabulary), **Comment guidance** (global comment config).
 The connector boundary - how a source plugs in - is the single, pluggable interface of D4. The full data model (ERD, lifecycle, events) is promoted in
 [docs/architecture/domain-model.md](architecture/domain-model.md) and the ubiquitous language in
 [docs/architecture/glossary.md](architecture/glossary.md).
@@ -210,12 +224,12 @@ Port almost verbatim from `cto-practice/tools/job-monitor/icp-score.mjs`:
 - Platform-aware rubric (same person scores differently as a post vs a people-search
   result vs an Upwork job).
 - Anti-hallucination guard (score -1 / INSUFFICIENT_DATA on thin data).
-- In job-monitor, qualify and the first-touch draft were one call; this change splits them (see Upgrade).
+- In job-monitor, qualify and the first-touch draft were one call; here scoring and generation are fully separated - scoring is the re-score action (and the no-LLM approval promotion), generation is the on-demand Message (see Upgrade, ADR-0019).
 
 Upgrade three things:
 - Move the rubric out of a hardcoded prompt into ICP config-as-data (D6).
 - Persist outcomes (connected? replied? booked?) against each score (D7).
-- Split qualify and the first-touch draft: qualify scores on the signal as the cost gate; the draft becomes a separate call after deep enrichment, grounded in the dossier, not bundled into the score call (D5, pipeline order).
+- Separate scoring from generation entirely: a Scoring is the no-LLM advisory promotion at approval plus the on-demand re-score; first-touch is a separately generated on-demand Message, never bundled into the score call (D5, D12).
 
 ## 6. Reuse map (existing assets -> product)
 
@@ -258,16 +272,16 @@ In:
   incrementally; cheapest first adapters are the person-yielding ones - LinkedIn
   search and X - because they need no expand layer)
 - Manual lead entry (add a known person by hand, no signal; ADR-0010) - the prospect
-  carries an `origin` and flows through the same qualify gate as a discovered one
+  carries an `origin`; it starts unscored and is scored only on demand (ADR-0019)
 - Normalize + expand layer (company -> people)
-- Qualifier (the ported 1-5 scorer)
-- Deep enrichment via Apify, optional and user-triggered by default with opt-in auto (ADR-0007)
-- Personalized draft from profile + signal context
-- Review/approve queue (anchor view)
-- Assisted action: queue hands you the drafted touch + research dossier + a deep link;
-  you act manually on LinkedIn. LinkedIn-first channel.
+- Qualifier (the ported 1-5 scorer), run on demand as a re-score; qualification is a derived read over the latest ICP Scoring (ADR-0019)
+- Deep enrichment via Apify, optional and user-triggered from the Person workspace (ADR-0007)
+- On-demand generation from the Person workspace: a LinkedIn Message (connection-request | DM, ADR-0021) and a Comment on a post (ADR-0018), each a synchronous click writing one row (ADR-0019)
+- The unified Queue (anchor view): the sole intake; approval Creates a Person/Company and promotes the advisory score into the person's initial Scoring (no LLM)
+- Configurable pipeline: `Person.status` is a FK into a seeded, CRUD-able `pipeline_status` (Cold .. On Hold), set directly by the operator (ADR-0020)
+- Assisted action: the workspace surfaces the generated message/comment + research dossier; you post manually on LinkedIn. LinkedIn-first channel.
 - Status tracking + outcome logging against scores
-- Universal triage inbox: every signal awaits a human approve/dismiss (the Queue triage lane), with an
+- Universal triage inbox: every signal awaits a human approve/dismiss in the one Queue, with an
   advisory type-keyed rubric hint; no per-source bypass (ADR-0013 / ADR-0014 / ADR-0017)
 - Person model: Person with `type` (prospect | peer) + `monitored`; Company as a first-class entity
   (ADR-0015 / ADR-0016)
@@ -308,9 +322,20 @@ Deferred:
   `content-marketing-engagement` change: universal triage (ADR-0013) - every signal awaits a human
   approve/dismiss, and the ICP score is advisory at triage, not an auto-gate. The same change settles
   the engagement motion and the Person/Company/Post/Comment model (ADR-0014..0018).
+- **The intake surface - one inbox or a split Triage + Review queue? RESOLVED** by the
+  `engagement-rework` change: one unified Queue is the sole intake; the separate Review & approve queue
+  is removed because the automatic drafting output it reviewed is gone (ADR-0019).
+- **The Person status model - a fixed disposition enum or a configurable pipeline? RESOLVED** by the
+  `engagement-rework` change: `Person.status` is a FK into a seeded, CRUD-able `pipeline_status`
+  vocabulary (the seeded "LinkedIn outreach" default is Cold .. On Hold), superseding the fixed enum
+  ([ADR-0020](adr/0020-configurable-pipelines-for-person-status.md)).
+- **NC1 - the multi-channel artifact model: a `channel` discriminator on Message/Comment, or
+  per-channel tables? OPEN.** v1 ships LinkedIn-only (a Message table + the existing Comment table);
+  when X / email / Telegram arrive the choice is left to a later investigation
+  ([ADR-0021](adr/0021-linkedin-message-entity.md)).
 - Adapter shipping order beyond the first two person-yielding sources.
 - When the feedback-loop / eval milestone lands (data accrues from day one regardless).
-- Exact "assisted action" UI affordances - being explored via the review/approve queue wireframe (`src/app/prototype/review-queue`); see the [anchor-view wireframes explore note](explore/2026-05-26-anchor-view-wireframes.md).
+- Exact "assisted action" UI affordances of the Person workspace - the queue/workspace wireframes under (`src/app/prototype/`); see the [anchor-view wireframes explore note](explore/2026-05-26-anchor-view-wireframes.md).
 - Apify cost validation at the real (low) volume; where the self-host vs Apify line
   actually falls per source.
 - Legal/PII posture once productized (storing third-party prospect data on behalf of

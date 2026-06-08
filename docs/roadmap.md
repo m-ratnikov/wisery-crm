@@ -76,11 +76,13 @@ multi-tenant plumbing (overview section 7); autonomous / automated sending (neve
 ## Open sequencing decisions
 
 - **Enrichment placement (M1 vs M2). RESOLVED** by [ADR-0007](adr/0007-user-triggered-optional-enrichment.md)
-  (2026-06-01): enrichment is in M1 but **optional and user-triggered by default** (with an opt-in
-  auto-enrich setting), not an automatic pre-draft stage. The default path is qualify -> draft from
-  the signal (cheaper, faster first loop); the user (or the auto setting) triggers deep-enrich, which
-  re-drafts from the dossier. This resolves the D5 tension - the signal-level score stays the cost
-  gate and enrichment is a user-controlled spend on top.
+  (2026-06-01): enrichment is in M1 but **optional and user-triggered by default**, not an automatic
+  pre-draft stage. **Refined by [ADR-0019](adr/0019-generation-and-scoring-on-demand.md)
+  (2026-06-08, engagement-rework):** the drafting stage is removed entirely - first-touch generation
+  and re-scoring are on-demand Person actions (approval promotes the advisory score into an initial
+  Scoring, no auto-qualify), and the opt-in auto-enrich-on-qualify setting is withdrawn; enrichment
+  stays optional and user-triggered, now from the Person workspace. The signal-level score still acts
+  as the cost gate (the advisory hint), resolving the D5 tension.
 - **Source shipping order beyond the first two person adapters** (product-overview open question).
 - **Whether `icp-config`'s anchor UI lags a seeded config** - qualification can start against a config
   seeded from `job-monitor`'s `ICP_SYSTEM_PROMPT` before the editing UI exists.

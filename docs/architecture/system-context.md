@@ -10,6 +10,10 @@ Related: [product-overview.md](../product-overview.md) (the spine, locked decisi
 (2026-05-22); LLM/provider labels and the draft-position note reconciled by `c4-level2-architecture`
 (2026-05-24); the engagement motion folded in by `content-marketing-engagement` (2026-06-07) - it adds
 no new external system, and the post author is reached only by a manual human action like the Prospect.
+The `engagement-rework` change (2026-06-08) leaves the external boundary unchanged; internally the
+split Triage + Review & approve surfaces collapse into one **Queue**, and post-intake work (generate a
+message or comment, re-score, enrich) becomes on-demand calls to the LLM and enrichment providers
+rather than an automatic pipeline (ADR-0019).
 
 ```mermaid
 flowchart TB

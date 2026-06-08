@@ -8,13 +8,19 @@ cross-cutting concerns in [cross-cutting.md](cross-cutting.md); the decisions be
 [ADR-0001](../adr/0001-background-job-runtime.md), [ADR-0002](../adr/0002-headless-browser-scraping.md),
 [ADR-0003](../adr/0003-llm-provider-port.md), [ADR-0004](../adr/0004-pg-boss-facade.md),
 [ADR-0005](../adr/0005-signal-to-prospect-fan-out.md),
-[ADR-0006](../adr/0006-pre-code-l3-component-view.md), and the engagement/triage slice
-[ADR-0013](../adr/0013-universal-triage-intake.md)..[ADR-0018](../adr/0018-engagement-artifacts-post-comment.md).
+[ADR-0006](../adr/0006-pre-code-l3-component-view.md), the engagement/triage slice
+[ADR-0013](../adr/0013-universal-triage-intake.md)..[ADR-0018](../adr/0018-engagement-artifacts-post-comment.md),
+and the engagement-rework slice [ADR-0019](../adr/0019-generation-and-scoring-on-demand.md)
+(on-demand generation/scoring, the drafting stage and `qualify-prospect` worker retired),
+[ADR-0020](../adr/0020-configurable-pipelines-for-person-status.md) (configurable pipelines),
+[ADR-0021](../adr/0021-linkedin-message-entity.md) (the Message entity).
 
 Promoted from change `c4-level2-architecture` (2026-05-24); the C4 L3 component section added by
 `c4-level3-and-domain-model` (2026-05-26); the universal-triage and engagement runtime flows and
-components added by `content-marketing-engagement` (2026-06-07). Containers are unchanged - the new
-work is components inside the existing app container, no new container or port. Flat at the top of the
+components added by `content-marketing-engagement` (2026-06-07); the drafting stage removed, the
+on-demand generation/scoring flows, the Message generator, and the pipeline module added by
+`engagement-rework` (2026-06-08). Containers are unchanged - the work is components inside the existing
+app container, no new container or port. Flat at the top of the
 architecture folder while there is a single implicit area (README rule 5).
 
 ## Containers
@@ -34,7 +40,7 @@ external unit and its edge (the provider) are dashed. A legend follows the diagr
 flowchart TB
     browser["Browser - thin client<br/>[Container: client-side, minimal JS over RSC]"]
 
-    app["Wisery CRM app<br/>[Container: Next.js 16 / Node 22, next start + systemd]<br/>serves anchor-view UIs (RSC + route handlers)<br/>AND hosts the in-process pg-boss worker<br/>(scan, normalize, qualify, enrich, draft)<br/>headless scrape: in-process Playwright launches a browser OS process on demand (L3)"]
+    app["Wisery CRM app<br/>[Container: Next.js 16 / Node 22, next start + systemd]<br/>serves anchor-view UIs (RSC + route handlers / server actions)<br/>AND hosts the in-process pg-boss worker<br/>(scan, normalize, advisory-filter, enrich, fetch-posts, activity-scan)<br/>headless scrape: in-process Playwright launches a browser OS process on demand (L3)"]
 
     db[("Managed Postgres<br/>[Container: datastore]<br/>app data + pg-boss job tables")]
     src["Signal sources<br/>LinkedIn search, X, CSV, news, job boards"]
@@ -46,7 +52,7 @@ flowchart TB
     app -->|"jobs (Postgres wire, direct pg-boss pool)"| db
     app -->|"pull sources (HTTPS)"| src
     app -.->|"pull / expand / deep-enrich (HTTPS) - provider path"| dp
-    app -->|"qualify + draft (HTTPS, carries PII)"| llm
+    app -->|"advisory-score + generate/re-score on demand (HTTPS, carries PII)"| llm
 
     classDef internal fill:#cfe3ff,stroke:#4a78b5,color:#10243e;
     classDef external fill:#ececec,stroke:#9a9a9a,color:#1f1f1f;
@@ -106,73 +112,58 @@ Container by container, and why each qualifies as a container (not a component):
 
 ## Key runtime flows
 
-Two highest-judgment flows, both consistent with the [L1 boundary flow](system-context.md#boundary-runtime-flow) and the [primary journey](../product-overview.md#primary-journey). These
+The highest-judgment flows, all consistent with the [L1 boundary flow](system-context.md#boundary-runtime-flow) and the [primary journey](../product-overview.md#primary-journey). These
 are dynamic views over the containers above; because the web and worker are one container, the app
-appears once and a note marks when it is acting in its in-process worker capacity (ADR-0001).
+appears once and a note marks when it is acting in its in-process worker capacity (ADR-0001). Post-intake
+work is no longer an automatic scan-to-queued-draft pipeline: approval is a synchronous Queue action
+that promotes the advisory score into an initial Scoring (no LLM, no downstream job), and generation /
+re-scoring / enrichment are on-demand Person actions (ADR-0019). The scheduled scan and advisory-filter
+flow is the "Scan to triage decision" sequence below.
 
-### Intelligence pipeline - scheduled scan to queued draft
+### Approve a signal from the Queue (no auto-pipeline, no LLM)
 
-```mermaid
-sequenceDiagram
-    participant App as Wisery CRM app
-    participant DB as Postgres
-    participant SRC as Signal source
-    participant SC as Headless browser (Playwright, separate OS process)
-    participant DP as Provider / Apify (optional)
-    participant LLM as LLM provider
-
-    Note over App: pg-boss cron fires one scan job per configured Source (D8) - in the in-process worker
-    App->>SRC: pull public/unauth (HTTPS)
-    SRC-->>App: raw records
-    opt self-host browser path (D4) - worker drives Playwright in-process
-        App->>SC: launch() + drive (CDP over pipe)
-        SC->>SRC: fetch (HTTPS)
-        SRC-->>SC: raw records
-        SC-->>App: raw records - close() reaps the process
-    end
-    opt provider path (D4, default for hardened targets)
-        App->>DP: pull / expand company -> people (HTTPS)
-        DP-->>App: people records - provider shape, raw (HTTPS)
-    end
-    Note over App,DP: company/content sources expand (above) before qualify - that spend is pre-gate,<br/>mitigated by a cheap firmographic pre-check + title-filtered expansion (product-overview)
-    Note over App: normalize raw records -> RawItems at the edge (our D4 connector),<br/>then dedup -> Signals (drop already-seen)
-    App->>DB: persist Signals + enqueue qualify jobs
-    Note over App,DB: one scan job per Source - a failure is isolated,<br/>retried, and dead-lettered by pg-boss (ADR-0001)
-    App->>LLM: qualify - score the signal-derived person, signal as cost gate (HTTPS, carries PII)
-    LLM-->>App: score (1-5)
-    Note over App,DB: qualify and the draft-after-enrich run as separate pg-boss jobs -<br/>each externally-billed step idempotent, own prompt_version, a draft retry never re-bills qualify (ADR-0001)
-    alt score >= 3
-        opt deep-enrich (provider available, D4)
-            App->>DP: deep-enrich prospect (HTTPS)
-            DP-->>App: enrichment (HTTPS)
-        end
-        App->>LLM: draft first touch from the dossier (HTTPS, carries PII)
-        LLM-->>App: draft
-        App->>DB: persist qualified prospect + dossier + draft (queued)
-    else score < 3
-        App->>DB: persist below-bar (silent)
-    end
-```
-
-### Human review and act
+The approval reframe ([ADR-0019](../adr/0019-generation-and-scoring-on-demand.md)): approving a signal
+in the Queue is a synchronous server action that creates the routed entity and, for a person/peer,
+promotes the already-computed advisory score into an `advisory`-provenance initial Scoring in the same
+transaction - no LLM call, no enqueue, so nothing downstream can strand.
 
 ```mermaid
 sequenceDiagram
     actor U as CRM user
-    participant B as Browser (thin client)
     participant App as Wisery CRM app
     participant DB as Postgres
-    actor P as Prospect
+    U->>App: Create Person from a signal (Queue)
+    Note over App: acting as server action - Queue approve
+    App->>DB: begin tx
+    App->>DB: write SignalDecision(approved, UNIQUE on signal_id)
+    App->>DB: create Person (status = default entry status Cold, pipeline_id)
+    App->>DB: resolve active rubric of advisory kind
+    App->>DB: write initial Scoring IF rubric exists (advisory score or -1, provenance = advisory)
+    App->>DB: commit tx
+    App-->>U: person created with its initial assessment, item drops from Queue
+    Note over App,DB: no LLM call (advisory score reused), company approval writes no Scoring, no rubric means unassessed, no downstream job to strand (ADR-0009 has nothing to hand off)
+```
 
-    U->>B: open approve queue
-    B->>App: request (HTTPS / RSC)
-    App->>DB: read queued prospects + dossier + draft (pooled endpoint)
-    DB-->>App: rows
-    App-->>B: rendered queue - no secrets cross to the client
-    U->>P: act manually via chosen channel (outside the system, ToS-safe D2)
-    U->>B: log outcome
-    B->>App: outcome
-    App->>DB: persist outcome against score (D7)
+### Work a person on demand (generate a message)
+
+The on-demand reframe: generating a message or comment, re-scoring, and enriching are synchronous
+server actions on the Person, each writing one row per call, with spend incurred only on the click
+(ADR-0019, ADR-0021).
+
+```mermaid
+sequenceDiagram
+    actor U as CRM user
+    participant App as Wisery CRM app
+    participant LLM as LLM provider
+    participant DB as Postgres
+    U->>App: Generate LinkedIn message (type = connection_request)
+    Note over App: acting as server action - Person workspace
+    App->>DB: load person info + identity
+    App->>LLM: complete(versioned LI prompt, structured output)
+    LLM-->>App: message body
+    App->>DB: insert one Message row (type, body, provider, prompt_version, model)
+    App-->>U: message shown inline, ready to copy and post manually
+    Note over App,LLM: synchronous, one row per call, error surfaces to the user (no retry, no double-bill)
 ```
 
 ### Scan to triage decision (universal-triage intake)
@@ -200,10 +191,10 @@ sequenceDiagram
     App->>LLM: advisory score by intent (rubric.kind matches signal kind/type)
     LLM-->>App: advisory result (1-5 / peer-fit / company-fit)
     App->>DB: attach advisory result to the triage read-model
-    U->>App: open Queue (kind = triage), approve or dismiss
+    U->>App: open the Queue, approve (Create Person/Company) or dismiss
     alt approve
-        Note over App,DB: one tx (ADR-0009)
-        App->>DB: SignalDecision approved, route by kind (Person / Company / author-as-peer + Post), enqueue qualify for type = prospect
+        Note over App,DB: one tx - no LLM, no downstream enqueue (ADR-0019)
+        App->>DB: SignalDecision approved, route by kind (Person / Company / author-as-peer + Post), promote advisory score into an advisory-provenance initial Scoring when a rubric of its kind exists
     else dismiss
         App->>DB: SignalDecision dismissed (a later re-scan cannot resurface it)
     end
@@ -272,9 +263,9 @@ flowchart TB
 
         subgraph web["Web / RSC surface - web role"]
             icp["ICP and source config<br/>anchor view #1"]
-            plist["Prospect list<br/>anchor view #3"]
-            queue["Review and approve queue<br/>anchor view #2"]
-            handlers["Route handlers / Server actions<br/>RSC reads + outcome logging + enqueue scan"]
+            plist["Person list + workspace<br/>anchor view #3"]
+            queue["Queue - the unified intake<br/>anchor view #2"]
+            handlers["Route handlers / Server actions<br/>RSC reads, on-demand actions, outcome logging, enqueue scan"]
         end
 
         root["Composition root<br/>instrumentation.ts -> bootstrapNodeRuntime<br/>starts jobs, registers workers + adapters"]
@@ -282,16 +273,16 @@ flowchart TB
         subgraph workers["Background pipeline - worker role (pg-boss handlers)"]
             hscan["scan handler"]
             hexpand["normalize-expand handler<br/>M2"]
-            hqual["qualify handler"]
+            hadv["advisory-filter handler"]
             henrich["enrich handler"]
-            hdraft["draft handler"]
         end
 
         subgraph cores["Domain cores - role-agnostic, depend on db only"]
             cscan["signals pipeline<br/>dedup + persist + scan counts"]
-            cqual["qualification core<br/>fan-out + score gate"]
+            cscore["scoring core<br/>score a person vs the rubric (re-score reuses this)"]
             cenrich["enrichment core<br/>builds dossier"]
-            cdraft["drafting core<br/>draft from dossier + profile"]
+            cmsg["message generator<br/>LinkedIn message on demand"]
+            cpipe["pipeline core<br/>seed + read + status setter"]
             cexpand["expansion core<br/>company -> people, M2"]
         end
 
@@ -312,7 +303,7 @@ flowchart TB
 
         subgraph prompts["Prompts - src/prompts/&lt;name&gt;_v&lt;n&gt;"]
             pq["qualify prompt"]
-            pd["draft prompt"]
+            pm["linkedin message prompt"]
         end
 
         subgraph platform["Platform facades - shared"]
@@ -334,6 +325,9 @@ flowchart TB
     queue --> handlers
     handlers --> db
     handlers --> jobs
+    handlers --> cscore
+    handlers --> cmsg
+    handlers --> cpipe
 
     root --> jobs
     root -->|"registers workers"| workers
@@ -341,21 +335,21 @@ flowchart TB
 
     hscan --> cscan
     hexpand --> cexpand
-    hqual --> cqual
+    hadv --> cscore
     henrich --> cenrich
-    hdraft --> cdraft
 
     cscan --> db
-    cqual --> db
+    cscore --> db
     cenrich --> db
-    cdraft --> db
+    cmsg --> db
+    cpipe --> db
     cexpand --> db
     cexpand --> penr
     cscan --> psrc
-    cqual --> pllm
-    cqual --> pq
-    cdraft --> pllm
-    cdraft --> pd
+    cscore --> pllm
+    cscore --> pq
+    cmsg --> pllm
+    cmsg --> pm
     cenrich --> penr
 
     afix -.->|implements| psrc
@@ -379,7 +373,7 @@ flowchart TB
     classDef port fill:#d6f5e0,stroke:#3f9d6a,color:#10243e;
     classDef adapter fill:#fff0cc,stroke:#c79a3a,color:#3a2e10;
     classDef anchorview fill:#eaf1ff,stroke:#4a78b5,color:#10243e,stroke-dasharray:4 4;
-    class handlers,root,hscan,hexpand,hqual,henrich,hdraft,cscan,cqual,cenrich,cdraft,cexpand,cfg,db,jobs,logc,pq,pd internal;
+    class handlers,root,hscan,hexpand,hadv,henrich,cscan,cscore,cenrich,cmsg,cpipe,cexpand,cfg,db,jobs,logc,pq,pm internal;
     class icp,plist,queue anchorview;
     class psrc,penr,pllm port;
     class afix,alink,ax,aapify,abrow,aanth adapter;
@@ -415,24 +409,24 @@ flowchart LR
 | Component | Responsibility | Seam / port | Role | Owning capability |
 |---|---|---|---|---|
 | ICP and source config | Edit rubric, profile, and sources as data (anchor #1) | - | web | icp-config |
-| Prospect list | Browse and manage prospects and signals (anchor #3) | - | web | prospect-list |
-| Review and approve queue | Surface queued prospect + dossier + draft, log outcome (anchor #2) | - | web | review-queue |
-| Route handlers / Server actions | RSC reads, the enqueue-scan trigger, outcome logging | reads `db`, calls `jobs` | web | each anchor view |
+| Person list + workspace | Browse and manage people and signals; the per-person workspace runs the on-demand actions (generate message/comment, re-score, enrich, set pipeline status) (anchor #3) | reads `db`, calls cores | web | person-list |
+| Queue - the unified intake | The sole intake surface: every undecided signal, advisory-scored and filterable, with Create Person/Company + dismiss; promotes the advisory score into an initial Scoring on approval (`signals LEFT JOIN signal_advisory LEFT JOIN signal_decisions`) (anchor #2) | reads `db` | web | universal-triage |
+| Route handlers / Server actions | RSC reads, the enqueue-scan trigger, the synchronous on-demand actions, outcome logging | reads `db`, calls `jobs` + cores | web | each anchor view |
 | Composition root | Start jobs, register workers and adapters - the only `kind -> instance` wiring point | `jobs`, `psrc` registry | boot | platform-runtime |
 | scan handler -> signals pipeline | Claim source, run connector, dedup, persist, tally | `SignalSource` via registry | worker | signal-ingestion |
-| qualify handler -> qualification core | Fan-out signal to person prospects, score against rubric, gate at >= 3 | `LLMProvider` | worker | qualification |
-| enrich handler -> enrichment core | Deep-enrich a qualified prospect into a dossier | `EnrichmentProvider` | worker | enrichment |
-| draft handler -> drafting core | Generate first-touch draft from dossier + profile | `LLMProvider` | worker | drafting |
-| normalize-expand handler -> expansion core | Company / content -> people before qualify | `EnrichmentProvider` | worker | normalize-expand (M2) |
+| scoring core | Score a person against the active in-kind rubric; reused by the synchronous re-score server action and the advisory-filter handler (no `qualify-prospect` worker) | `LLMProvider` | both | qualification |
+| enrich handler -> enrichment core | Deep-enrich a person into a dossier (user-triggered from the workspace) | `EnrichmentProvider` | worker | enrichment |
+| message generator | Generate a LinkedIn message (connection_request \| message) on demand, one row per call (synchronous server action) | `LLMProvider` | web | messaging |
+| pipeline core | Seed the default pipeline + statuses, read them, and set a person's status | reads `db` | web | pipelines |
+| normalize-expand handler -> expansion core | Company / content -> people | `EnrichmentProvider` | worker | normalize-expand (M2) |
 | SignalSource port + registry | The D4 connector contract + the `kind -> connector` map | port (D4) | both | signal-ingestion |
 | EnrichmentProvider port | The D4 deep-enrich contract | port (D4) | worker | enrichment |
-| LLMProvider port | Provider-neutral structured-output contract (D9, ADR-0003) | port (D9) | worker | llm-provider |
+| LLMProvider port | Provider-neutral structured-output contract (D9, ADR-0003) | port (D9) | both | llm-provider |
 | Connectors (fixture [test/dev only], linkedin-search, x-posts) | Fetch + normalize one source kind | implement `SignalSource` | worker | source-adapters; fixture from signal-ingestion |
 | Enrichment adapters (Apify, self-host browser) | Deep-enrich / scrape per the cost knob | implement `EnrichmentProvider` | worker | enrichment |
-| Anthropic adapter | Default LLM via Structured Outputs + 1h cache | implements `LLMProvider` | worker | llm-provider |
-| Prompts | Versioned qualify / draft prompts for `prompt_version` traceability | consumed by cores | worker | qualification, drafting |
+| Anthropic adapter | Default LLM via Structured Outputs + 1h cache | implements `LLMProvider` | both | llm-provider |
+| Prompts | Versioned qualify / LinkedIn message / comment prompts for `prompt_version` traceability | consumed by cores | both | qualification, messaging, engagement |
 | config / db / jobs / log | The reused platform facades - no parallel mechanisms | - | both | platform-runtime, background-jobs |
-| Queue - triage lane | Approve/dismiss pending signals with the advisory hint (signals LEFT JOIN signal_decisions) | reads `db` | web | universal-triage |
 | Feed | Monitored people's posts; draft + mark-posted comments inline (anchor #4) | reads `db` | web | engagement |
 | advisory-filter handler -> filter core | Score a signal by the rubric matching its intent; advisory only, writes no Scoring row | `LLMProvider` (own queue) | worker | universal-triage |
 | activity-scan dispatcher | Enqueue one fetch-posts job per monitored person (per-unit isolation) | `jobs` | worker | engagement |
@@ -450,14 +444,19 @@ container or port ([ADR-0013](../adr/0013-universal-triage-intake.md)..[ADR-0018
 They follow the same port/adapter rules (cores depend on `db` only; adapters implement ports; wiring
 only at the composition root), so they extend the skeleton above rather than redraw it.
 
-- **Queue** gains a `kind` discriminator: the existing review-and-approve queue (anchor #2) is its
-  **send lane** (`Person` rows where status = queued); a new **triage lane** reads pending signals
-  (`signals LEFT JOIN signal_decisions`) plus the advisory result and records approve/dismiss. The two
-  lanes share a nav surface, not a query, component state, or action handler (the same
-  DRY-is-one-rule test that keeps Comment separate from Draft).
+- **Queue** (anchor #2) is the single intake surface: it reads every undecided signal
+  (`signals LEFT JOIN signal_advisory LEFT JOIN signal_decisions`) plus the advisory result, is
+  filterable by score, and records Create Person/Company or dismiss. Approval promotes the advisory
+  score into the person's `advisory`-provenance initial Scoring in the same transaction (no LLM). The
+  former separate Triage and Review & approve surfaces are gone - there is no `queued` send lane,
+  because there is no automatic drafting output to review (ADR-0019); sending is a manual act from the
+  Person workspace or the Feed (D2).
 - **Feed** (anchor #4): a new RSC surface over monitored people's posts; opens a post detail
   (post + person-360) where comments are drafted and marked posted.
-- **Person detail** gains the "get latest posts" action and the posts/comments history.
+- **Person workspace** (on the Person list / detail) runs the on-demand actions: generate a LinkedIn
+  message (via the message generator), generate a comment, re-score (reusing the scoring core), enrich,
+  and set the pipeline status; plus the "get latest posts" action and the message/posts/comments
+  history.
 - **advisory-filter handler -> filter core**: its own capped-concurrency pg-boss queue; runs the
   rubric matching a signal's intent and writes the advisory result to the triage read-model
   (via `LLMProvider`), writing no `Scoring` row.
@@ -481,14 +480,17 @@ no-rewrite peel into a standalone `worker.ts` stays available. The peel-safety i
 worker components share state only through Postgres (rows + pg-boss jobs) - no module-level mutable
 singletons, no in-process cache or event bus, no transaction spanning a request handler and a job.
 The domain cores are deliberately role-agnostic and depend on `db` only, so the same core is callable
-from a handler or a worker without dragging in queue or HTTP concerns. Where a stage must both write
-rows and enqueue the next job - the qualify fan-out persisting N prospects and queuing their next
-stage - the job handler, not the core, owns one Drizzle transaction passed to both the repo and
-`jobs.enqueue` (pg-boss `send` shares the same Postgres), so the writes and their follow-on jobs
-commit atomically while the core stays db-only. This is within a single job handler, so it does not
-violate the no-transaction-spanning-a-request-and-a-job invariant. The self-host browser is a separate
-OS process the browser adapter spawns on demand (ADR-0002), drawn as the external `Headless browser`
-box.
+from a handler or a worker without dragging in queue or HTTP concerns - the scoring core, for instance,
+is reused by both the synchronous re-score server action and the advisory-filter handler. Where a
+worker stage must both write rows and enqueue the next job (the scan slice persisting Signals and
+enqueuing one advisory-filter job each), the job handler, not the core, owns one Drizzle transaction
+passed to both the repo and `jobs.enqueue` (pg-boss `send` shares the same Postgres), so the writes and
+their follow-on jobs commit atomically while the core stays db-only. This is within a single job
+handler, so it does not violate the no-transaction-spanning-a-request-and-a-job invariant. The
+on-demand Person actions (message/comment generation, re-score) are synchronous server actions that
+write one row and enqueue nothing, so they raise no handoff concern at all. The self-host browser is a
+separate OS process the browser adapter spawns on demand (ADR-0002), drawn as the external
+`Headless browser` box.
 
 ### Ports and adapters direction
 
@@ -504,8 +506,8 @@ candidate to add when qualification lands).
 ### L3 runtime flow - scan slice internals
 
 The internal view of the scan slice, revealing the handler/core/registry/port decomposition the
-container view hides; consistent with the Prospect lifecycle (a SignalPersisted event with no further
-enqueue yet, owned by qualification when it lands).
+container view hides; consistent with the Signal triage lifecycle (a SignalPersisted event that
+enqueues one advisory-filter job per new signal, drawn as the cross-stage handoff below).
 
 ```mermaid
 sequenceDiagram
@@ -528,7 +530,7 @@ sequenceDiagram
         Note over Core,DB: empty return = duplicate, counted dropped
     end
     Core->>DB: close scan run completed with counts
-    Note over Core: no downstream qualify enqueue yet, job graph stays closed
+    Note over Core: the persist tx enqueues one advisory-filter job per new signal, no auto entity creation
 ```
 
 ### L3 runtime flow - cross-stage enqueue handoff
@@ -537,14 +539,17 @@ How one worker hands off to the next without importing it, and why a committed s
 transition can never be stranded without its follow-on job. This is the dynamic view of
 [ADR-0009](../adr/0009-atomic-enqueue-handoff.md) (atomic enqueue-in-transaction), resting on
 [ADR-0004](../adr/0004-pg-boss-facade.md) (the pg-boss facade) and
-[ADR-0001](../adr/0001-background-job-runtime.md) (in-process worker). The scan slice above is a
-stage with no downstream enqueue yet; this is the qualify -> draft handoff once both stages exist.
+[ADR-0001](../adr/0001-background-job-runtime.md) (in-process worker). The surviving worker-to-worker
+handoff is **scan -> advisory-filter**: the persist transaction enqueues one advisory-filter job per
+new signal. The former qualify -> draft handoff is gone with the drafting stage (ADR-0019), and
+approval enqueues no job at all (it is a synchronous Queue action), so it joins this seam only as the
+degenerate "nothing to hand off" case.
 
 Three invariants the diagram encodes:
 
 - The pipeline topology lives only at the composition root: it injects a transaction-aware
-  `enqueueNext(tx, ids)` callback into each stage, so a core imports no sibling stage (the
-  drafting D-E seam). Changing the graph is a composition-root edit, not a core or queue edit.
+  `enqueueNext(tx, ids)` callback into each stage, so a core imports no sibling stage. Changing the
+  graph is a composition-root edit, not a core or queue edit.
 - Any network / LLM / provider call a stage needs runs BEFORE the transaction opens; only DB
   writes are inside it.
 - The follow-on job's INSERT rides the same Drizzle transaction as the state write via pg-boss's
@@ -556,34 +561,34 @@ Three invariants the diagram encodes:
 sequenceDiagram
     participant Boot as Composition root (instrumentation.ts)
     participant PB as pg-boss (queues in the app Postgres)
-    participant QH as qualify handler (worker role)
-    participant QC as qualification core (db-only)
-    participant LLM as LLM provider (external)
+    participant SH as scan handler (worker role)
+    participant SC as signals pipeline core (db-only)
     participant DB as Postgres (app tables + pg-boss tables)
-    participant DH as draft handler (worker role)
-    participant DC as drafting core (db-only)
+    participant AH as advisory-filter handler (worker role)
+    participant AC as scoring core (db-only)
+    participant LLM as LLM provider (external)
 
-    Note over Boot: at startup registers each worker and injects enqueueNext(tx, ids), the only place that knows qualify to draft
-    PB->>QH: deliver qualify job (singletonKey = signalId, one active per signal)
-    QH->>QC: qualifySignal(signalId, enqueueNext)
-    QC->>LLM: score the person (HTTPS, carries PII), OUTSIDE any transaction
-    LLM-->>QC: score
+    Note over Boot: at startup registers each worker and injects enqueueNext(tx, ids), the only place that knows scan to advisory-filter
+    PB->>SH: deliver source-scan job (singletonKey = sourceId)
+    SH->>SC: runScan(sourceId, enqueueNext)
     rect rgb(235, 245, 255)
-        Note over QC,DB: one Drizzle transaction (ADR-0009)
-        QC->>DB: write Prospect + Scoring (the state)
-        QC->>PB: enqueueNext calls enqueueDraftInTx(tx), sending on the same tx so the job INSERT rides it
-        QC->>DB: COMMIT, state and the draft job commit atomically
+        Note over SC,DB: one Drizzle transaction (ADR-0009)
+        SC->>DB: persist new Signals (insert on conflict do nothing)
+        SC->>PB: enqueueNext calls enqueueAdvisoryFilterInTx(tx) per new signal, on the same tx so the job INSERT rides it
+        SC->>DB: COMMIT, the signals and their advisory-filter jobs commit atomically
     end
-    Note over QC,PB: process death or a failed send before COMMIT rolls BOTH back, no strand window
-    PB->>DH: later, deliver draft job (prospectId)
-    DH->>DC: draftProspect(prospectId)
-    DC->>DB: write Draft, move Prospect status to queued (appears in the review-queue read-model)
-    Note over DH,DC: a handler error propagates so pg-boss retries then dead-letters (ADR-0001), and singletonKey keeps it idempotent
+    Note over SC,PB: process death or a failed send before COMMIT rolls BOTH back, no strand window
+    PB->>AH: later, deliver advisory-filter job (signalId)
+    AH->>AC: advisoryScore(signalId), the rubric matching the signal's intent
+    AC->>LLM: advisory score (HTTPS, carries PII), OUTSIDE any transaction
+    LLM-->>AC: advisory result
+    AC->>DB: attach the advisory result to the triage read-model (writes no Scoring)
+    Note over AH,AC: a handler error propagates so pg-boss retries then dead-letters (ADR-0001), and singletonKey keeps it idempotent
 ```
 
-Pipeline handoffs use `enqueueInTx` (atomic, above). User-triggered enqueues (a manual lead's
-qualify, the "Regenerate draft" action) are not handoffs and use the fire-and-forget `enqueue`
-instead: their failure surfaces to the user who retries, so they need no shared transaction
-(ADR-0009). The same seam carries the policy branch the pipeline may grow: what a stage's
-`enqueueNext` enqueues (or whether it enqueues at all) is decided at the composition root, so a
-person that should not advance to drafting is a routing choice there, not a change to any core.
+Pipeline handoffs use `enqueueInTx` (atomic, above). User-triggered enqueues (the "Enrich" action) are
+not handoffs and use the fire-and-forget `enqueue` instead: their failure surfaces to the user who
+retries, so they need no shared transaction (ADR-0009). The on-demand generation and re-score actions
+are synchronous server actions that enqueue nothing at all. The same seam carries the policy branch the
+pipeline may grow: what a stage's `enqueueNext` enqueues (or whether it enqueues at all) is decided at
+the composition root, a routing choice there, not a change to any core.
