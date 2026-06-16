@@ -26,7 +26,6 @@ describe.skipIf(!url)("universal-triage: advisory + decide (integration)", () =>
   let advisory: typeof import("@/lib/triage/advisory");
   let decide: typeof import("@/lib/triage/decide");
   let read: typeof import("@/lib/triage/read");
-  let qualifyRead: typeof import("@/lib/qualify/read");
 
   let sourceId = "";
   let scanId = "";
@@ -44,7 +43,6 @@ describe.skipIf(!url)("universal-triage: advisory + decide (integration)", () =>
   async function truncateAll() {
     const db = getDb();
     await db.delete(schema.posts);
-    await db.delete(schema.scorings);
     await db.delete(schema.signalAdvisory);
     await db.delete(schema.signalDecisions);
     await db.delete(schema.person);
@@ -76,7 +74,6 @@ describe.skipIf(!url)("universal-triage: advisory + decide (integration)", () =>
     advisory = await import("@/lib/triage/advisory");
     decide = await import("@/lib/triage/decide");
     read = await import("@/lib/triage/read");
-    qualifyRead = await import("@/lib/qualify/read");
     await truncateAll();
     await icp.saveRubric({ name: "icp", criteria });
     const [src] = await getDb()
@@ -98,7 +95,7 @@ describe.skipIf(!url)("universal-triage: advisory + decide (integration)", () =>
   const scorer = (score: number) =>
     fakeLLM.createFakeLLM(() => ({ score, reason: "fits", summary: "a hint" }));
 
-  it("the advisory filter writes a hint and NO durable Scoring", async () => {
+  it("the advisory filter writes the hint on the signal (the only score, ADR-0022)", async () => {
     const signalId = await makeSignal("person", { name: "Jane" }, "s1");
     const out = await advisory.runAdvisoryFilter(signalId, { llm: scorer(4) });
     expect(out).toMatchObject({ rubricKind: "icp", scored: true });
@@ -108,8 +105,6 @@ describe.skipIf(!url)("universal-triage: advisory + decide (integration)", () =>
       .from(schema.signalAdvisory)
       .where(eq(schema.signalAdvisory.signalId, signalId));
     expect(hint.score).toBe(4);
-    // Advisory writes no Scoring row - the learning loop is untouched (ADR-0013/0017).
-    expect(await getDb().select().from(schema.scorings)).toHaveLength(0);
   });
 
   it("a content signal with no peer rubric yields a null advisory (not an error)", async () => {
@@ -138,10 +133,8 @@ describe.skipIf(!url)("universal-triage: advisory + decide (integration)", () =>
     expect(after).toHaveLength(1);
   });
 
-  it("approving a person signal creates a prospect Person and promotes the advisory Scoring", async () => {
+  it("approving a person signal creates the Person only; the advisory hint stays on the signal", async () => {
     const signalId = await makeSignal("person", { name: "Jane" }, "s1");
-    // The advisory pass scores the signal (an icp rubric is seeded in beforeEach), so approval has
-    // an advisory to promote.
     await advisory.runAdvisoryFilter(signalId, { llm: scorer(4) });
 
     const out = await decide.approveSignal(signalId);
@@ -150,38 +143,29 @@ describe.skipIf(!url)("universal-triage: advisory + decide (integration)", () =>
       .select()
       .from(schema.person)
       .where(eq(schema.person.signalId, signalId));
-    // The approved person enters the pipeline at the entry status ('Cold'); qualification is the read
-    // over the promoted advisory Scoring, not the pipeline position (ADR-0020).
+    // The approved person enters the pipeline at the entry status ('Cold'); no score is written
+    // for it - approval is entity + decision only (ADR-0022).
     expect(p).toMatchObject({ type: "prospect", origin: "signal" });
     const [entry] = await getDb()
       .select({ name: schema.pipelineStatus.name })
       .from(schema.pipelineStatus)
       .where(eq(schema.pipelineStatus.id, p.statusId));
     expect(entry.name).toBe("Cold");
-    // The advisory score (4) is promoted, so the qualification read returns `qualified` without a
-    // second LLM pass (ADR-0019).
-    expect(await qualifyRead.qualificationFor(p.id)).toBe("qualified");
     expect(out.createdEntityId).toBe(p.id);
 
-    // The promoted initial Scoring carries the advisory score, provenance `advisory`, the sentinel
-    // provider/prompt/model, and NO LLM call (ADR-0019).
-    const ss = await getDb()
+    // The advisory hint remains readable on the signal after approval (ADR-0022: the score lives
+    // where the judgment happened, never copied to the created entity).
+    const [hint] = await getDb()
       .select()
-      .from(schema.scorings)
-      .where(eq(schema.scorings.personId, p.id));
-    expect(ss).toHaveLength(1);
-    expect(ss[0].score).toBe(4);
-    expect(ss[0].provenance).toBe("advisory");
-    expect(ss[0].provider).toBe("advisory");
-    expect(ss[0].promptVersion).toBe("advisory");
-    expect(ss[0].model).toBe("advisory");
+      .from(schema.signalAdvisory)
+      .where(eq(schema.signalAdvisory.signalId, signalId));
+    expect(hint.score).toBe(4);
   });
 
-  it("approving a person signal with no active rubric of its kind writes no Scoring but still succeeds", async () => {
+  it("approving a person signal succeeds without any rubric or advisory", async () => {
     const signalId = await makeSignal("person", { name: "Jane" }, "s1");
-    await advisory.runAdvisoryFilter(signalId, { llm: scorer(4) });
-    // Drop the icp rubric so there is nothing to express the promotion against (the person reads
-    // `unassessed`); approval must not fail.
+    // No advisory filter run and no rubric at all: approval is independent of scoring (the
+    // advisory is a hint, never a gate - ADR-0013 stands).
     await getDb().delete(schema.rubric);
 
     const out = await decide.approveSignal(signalId);
@@ -190,15 +174,10 @@ describe.skipIf(!url)("universal-triage: advisory + decide (integration)", () =>
       .select()
       .from(schema.person)
       .where(eq(schema.person.signalId, signalId));
-    // No rubric to promote against -> no Scoring, so the qualification read is `unassessed`; the
-    // person still enters the pipeline at its entry status (ADR-0019/0020).
-    expect(await qualifyRead.qualificationFor(p.id)).toBe("unassessed");
-    expect(
-      await getDb().select().from(schema.scorings).where(eq(schema.scorings.personId, p.id)),
-    ).toHaveLength(0);
+    expect(p).toMatchObject({ type: "prospect", origin: "signal" });
   });
 
-  it("approving a company signal creates a Company and writes no Scoring", async () => {
+  it("approving a company signal creates a Company", async () => {
     const signalId = await makeSignal("company", { name: "Acme" }, "co1");
     const out = await decide.approveSignal(signalId);
     expect(out.kind).toBe("company");
@@ -208,8 +187,6 @@ describe.skipIf(!url)("universal-triage: advisory + decide (integration)", () =>
       .where(eq(schema.companies.signalId, signalId));
     expect(c.name).toBe("Acme");
     expect(out.createdEntityId).toBe(c.id);
-    // A company creates no Person and no Scoring (ADR-0017 company-rubric-no-Scoring exception).
-    expect(await getDb().select().from(schema.scorings)).toHaveLength(0);
   });
 
   it("approving a content signal creates a peer Person with the post attached", async () => {

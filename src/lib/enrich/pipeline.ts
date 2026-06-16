@@ -3,15 +3,15 @@ import { getDb, type DbTx } from "@/lib/db";
 import { dossiers } from "@/lib/db/schema";
 import { getEnrichmentProvider } from "@/lib/enrich";
 import type { EnrichmentProvider } from "@/lib/enrich/provider";
-import { loadActionableProspect } from "@/lib/prospect/load";
+import { loadProspectSubject } from "@/lib/prospect/load";
 
-// The testable enrich core (enrichment D-D): deep-enrich a qualified prospect (the qualification
-// read, ADR-0019/0020) and upsert its single dossier. The provider is injectable so tests use the
-// fake. The drafting stage was retired (ADR-0019), so the enqueueNext hook is currently unwired.
+// The testable enrich core (enrichment D-D): deep-enrich a prospect and upsert its single dossier.
+// Any person is enrichable on demand - the human's triage verdict admitted them, there is no
+// qualification gate (ADR-0022). The provider is injectable so tests use the fake. The drafting
+// stage was retired (ADR-0019), so the enqueueNext hook is currently unwired.
 export interface EnrichOutcome {
   personId: string;
   enriched: boolean;
-  skipped: boolean;
 }
 
 export async function enrichProspect(
@@ -26,12 +26,7 @@ export async function enrichProspect(
 ): Promise<EnrichOutcome> {
   const db = getDb();
 
-  // Only a qualified prospect is enriched (the qualification read); below-bar / unassessed skip.
-  const loaded = await loadActionableProspect(personId);
-  if (!loaded) {
-    return { personId, enriched: false, skipped: true };
-  }
-  const { subject } = loaded;
+  const { subject } = await loadProspectSubject(personId);
 
   const provider = opts.provider ?? getEnrichmentProvider();
   const result = await provider.enrich(subject);
@@ -49,5 +44,5 @@ export async function enrichProspect(
     if (opts.enqueueNext) await opts.enqueueNext(tx, personId);
   });
 
-  return { personId, enriched: true, skipped: false };
+  return { personId, enriched: true };
 }

@@ -2,16 +2,7 @@ import "server-only";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/lib/db";
-import {
-  companies,
-  person,
-  posts,
-  scorings,
-  signalAdvisory,
-  signalDecisions,
-} from "@/lib/db/schema";
-import { getActiveRubric } from "@/lib/icp/config";
-import { rubricKindSchema } from "@/lib/icp/schema";
+import { companies, person, posts, signalDecisions } from "@/lib/db/schema";
 import { getEntryStatus } from "@/lib/pipeline/config";
 import { dedupKeyFor } from "@/lib/posts/dedup";
 import { loadSignalById } from "@/lib/signals/load";
@@ -21,13 +12,12 @@ import { loadSignalById } from "@/lib/signals/load";
 export const signalDispositionSchema = z.enum(["approved", "dismissed"]);
 export type SignalDisposition = z.infer<typeof signalDispositionSchema>;
 
-// Triage approve / dismiss (universal-triage, ADR-0013/0014/0016/0018; promotion ADR-0019). Approval
-// routes a signal by kind into exactly the right entity in ONE transaction (ADR-0009): person ->
-// Person(prospect); company -> Company; content -> author Person(peer) + Post. For a person/peer it
-// also promotes the advisory score into the person's initial Scoring (no LLM, provenance `advisory`)
-// when an active rubric of the advisory's kind exists. `created_entity_id` records the single primary
-// entity. A dismissal records the verdict so a re-scan cannot resurface the signal. Both are
-// idempotent on the signal's existing decision (the unique signal_id).
+// Triage approve / dismiss (universal-triage, ADR-0013/0014/0016/0018). Approval routes a signal
+// by kind into exactly the right entity in ONE transaction (ADR-0009): person -> Person(prospect);
+// company -> Company; content -> author Person(peer) + Post. No score is written - the advisory
+// stays on the signal, the only scored thing in the system (ADR-0022). `created_entity_id` records
+// the single primary entity. A dismissal records the verdict so a re-scan cannot resurface the
+// signal. Both are idempotent on the signal's existing decision (the unique signal_id).
 
 function payloadStr(payload: unknown, key: string): string | null {
   if (payload && typeof payload === "object" && key in payload) {
@@ -59,31 +49,9 @@ export async function approveSignal(signalId: string): Promise<ApproveOutcome> {
     return { signalId, kind: signal.kind, createdEntityId: null, alreadyDecided: true };
   }
 
-  // Resolve everything needed to promote the advisory score BEFORE the transaction opens, so the tx
-  // stays write-only and never waits on a second pooled connection (ADR-0009). The advisory row
-  // carries the rubric_kind and a nullable score; the active rubric of that kind gives the rubric_id
-  // a Scoring requires. A company signal promotes nothing (ADR-0017's company-rubric-no-Scoring).
-  const [advisory] =
-    signal.kind === "company"
-      ? [undefined]
-      : await db
-          .select({
-            rubricKind: signalAdvisory.rubricKind,
-            score: signalAdvisory.score,
-            reason: signalAdvisory.reason,
-          })
-          .from(signalAdvisory)
-          .where(eq(signalAdvisory.signalId, signalId))
-          .limit(1);
-  // The advisory rubric_kind is free DB text; degrade to no-promotion on an unexpected value
-  // (safeParse, not parse) so a data-drift kind can never throw and abort the approval.
-  const advisoryKind = advisory ? rubricKindSchema.safeParse(advisory.rubricKind) : undefined;
-  const promotionRubric = advisoryKind?.success ? await getActiveRubric(advisoryKind.data) : null;
-  const promotes = signal.kind !== "company" && advisory != null && promotionRubric != null;
-  // Every newly created Person enters the default pipeline at its entry status (ADR-0020); the
-  // pipeline position is orthogonal to qualification, which is now the read over the promoted
-  // Scoring, not a status. Resolved before the tx so the write stays connection-cheap (ADR-0009).
-  // A company creates no Person, so it needs no entry status.
+  // Every newly created Person enters the default pipeline at its entry status (ADR-0020).
+  // Resolved BEFORE the transaction opens, so the tx stays write-only and never waits on a second
+  // pooled connection (ADR-0009). A company creates no Person, so it needs no entry status.
   const entry = signal.kind === "company" ? null : await getEntryStatus();
 
   const createdEntityId = await db.transaction(async (tx) => {
@@ -141,21 +109,6 @@ export async function approveSignal(signalId: string): Promise<ApproveOutcome> {
         })
         .returning({ id: person.id });
       primaryId = p.id;
-    }
-    // Promote the advisory into the person's initial Scoring (ADR-0019): no LLM, provenance
-    // `advisory`, the `advisory` sentinel in provider/prompt/model. Only when a rubric of the
-    // advisory's kind exists; absent it the person reads `unassessed` and approval still succeeds.
-    if (promotes) {
-      await tx.insert(scorings).values({
-        personId: primaryId,
-        rubricId: promotionRubric.id,
-        score: advisory.score ?? -1,
-        reason: advisory.reason,
-        provenance: "advisory",
-        provider: "advisory",
-        promptVersion: "advisory",
-        model: "advisory",
-      });
     }
     await tx.insert(signalDecisions).values({
       signalId,

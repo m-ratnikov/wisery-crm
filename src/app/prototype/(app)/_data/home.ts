@@ -1,35 +1,42 @@
-// Mock data for the whole-app shell (/prototype). This screen is not a fourth
-// anchor view - the thesis commits to only three. It is a clickable view of the
-// primary journey (product-overview), a peer to the sequence diagrams: the daily
-// loop as a funnel, with deep links into the three hand-built anchors.
+// Mock data for the whole-app shell (/prototype). This screen is not an anchor view -
+// it is a clickable view of the primary journey: the daily loop. Live counts are
+// computed in the page from the other mock modules; this file holds only the
+// background-activity and recent-scan mocks, which have no other home.
 
 import type { SourceKind } from "./types";
 
-export interface FunnelStage {
+// What the background pipeline is doing right now. After the engagement rework
+// (ADR-0019/0022) only three things run as background jobs: scan, the advisory filter
+// (the only scoring in the system), and the activity scan. Generation and enrichment
+// are synchronous on-demand actions on a Person - NOT background stages - so they are
+// deliberately absent here.
+export interface PipelineActivity {
   key: string;
   label: string;
-  count: number;
-  emphasis?: boolean;
-  href?: string;
+  state: "running" | "idle";
+  detail: string;
 }
 
-// The pipeline as a descending funnel (product-overview section 4). Illustrative counts.
-export const funnel: FunnelStage[] = [
-  { key: "signals", label: "Signals", count: 128 },
-  { key: "scored", label: "Scored", count: 96 },
-  { key: "qualified", label: "Qualified (3+)", count: 41 },
-  { key: "drafted", label: "Drafted", count: 23 },
+export const activity: PipelineActivity[] = [
   {
-    key: "queued",
-    label: "Queued",
-    count: 12,
-    emphasis: true,
-    href: "/prototype/review-queue",
+    key: "scan",
+    label: "Source scan",
+    state: "running",
+    detail: "LinkedIn search - paging new people into signals",
+  },
+  {
+    key: "advisory",
+    label: "Advisory filter",
+    state: "running",
+    detail: "Scoring new signals with the type-keyed rubric - a hint, not a gate",
+  },
+  {
+    key: "activity",
+    label: "Activity scan",
+    state: "idle",
+    detail: "Fetches posts from monitored people into the Feed",
   },
 ];
-
-// Scored under the bar (96 - 41): kept silently for the learning loop (D7).
-export const belowBar = 55;
 
 export interface RecentScan {
   kind: SourceKind;
@@ -38,33 +45,8 @@ export interface RecentScan {
   at: string;
 }
 
-// People-first MVP: only the person scrapers (LinkedIn, X). Company-list and news
-// scrapers (which expand to people) are V2 - see Settings > Connected scrapers.
 export const recentScans: RecentScan[] = [
-  { kind: "linkedin-search", label: "LinkedIn: hiring + leadership", added: 14, at: "2h ago" },
-  { kind: "x-posts", label: "X: build-vs-borrow threads", added: 6, at: "5h ago" },
-  { kind: "linkedin-search", label: "LinkedIn: design-tooling founders", added: 5, at: "8h ago" },
+  { kind: "linkedin-search", label: "LinkedIn: hiring + leadership", added: 4, at: "1h ago" },
+  { kind: "x-posts", label: "X: build-vs-borrow threads", added: 2, at: "3h ago" },
+  { kind: "csv-companies", label: "CSV: Series A/B target list", added: 1, at: "5h ago" },
 ];
-
-// What the background pipeline is doing right now. The product is mostly jobs +
-// generative output (the thesis); this panel makes that work legible on the shell.
-export interface PipelineActivity {
-  key: string;
-  label: string;
-  state: "running" | "queued";
-  detail: string;
-}
-
-export const activity: PipelineActivity[] = [
-  {
-    key: "scan",
-    label: "Scanning LinkedIn",
-    state: "running",
-    detail: "hiring + leadership posts",
-  },
-  { key: "qualify", label: "Qualifying", state: "running", detail: "6 new signals scoring" },
-  { key: "draft", label: "Drafting", state: "running", detail: "3 qualified prospects" },
-  { key: "enrich", label: "Enriching", state: "queued", detail: "2 you sent to enrich" },
-];
-
-export const queueSummary = { ready: 12, draftedToday: 3 };

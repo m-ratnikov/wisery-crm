@@ -32,7 +32,7 @@ const timestamps = () => ({
     .$onUpdate(() => new Date()),
 });
 
-// Provider / prompt-version / model provenance for an LLM-produced row (scorings, drafts, comments),
+// Provider / prompt-version / model provenance for an LLM-produced row (drafts, comments, messages),
 // recorded so outcomes can be evaluated per provider+model and per prompt version (D7, ADR-0003).
 const llmCols = () => ({
   provider: text("provider").notNull(),
@@ -197,12 +197,10 @@ export const pipelineStatus = pgTable(
   ],
 );
 
-// Qualification (qualification). A Prospect is a person under evaluation, fanned out from a
-// Signal (one-to-many, ADR-0005); its pipeline progress lives in `pipeline_id` + `status_id`, a
-// FK into a configurable pipeline (ADR-0020), not a fixed enum. A Scoring is the per-person ICP
-// rating against a rubric version -
-// additive, so re-scoring is new rows and the learning loop binds outcomes to the exact
-// score and rubric a prospect was acted on (D5, D7).
+// A Prospect is a person admitted at triage, fanned out from a Signal (one-to-many shape,
+// ADR-0005); its pipeline progress lives in `pipeline_id` + `status_id`, a FK into a configurable
+// pipeline (ADR-0020), not a fixed enum. People carry no score - the advisory score stays on the
+// signal, the only scored thing in the system (ADR-0022).
 // A Prospect originates from a signal (discovered, the fan-out path) or is entered manually
 // by the CRM user (ADR-0010). `origin` is text+Zod (the churn-prone-set policy, beside
 // `status`), defaulting to `signal` so the migration is additive. `signal_id` is nullable:
@@ -234,9 +232,8 @@ export const person = pgTable(
     linkedinUrl: text("linkedin_url"),
     // The Person's pipeline position (ADR-0020): a FK into pipeline_status, not a fixed enum. The
     // composite FK below pins (pipeline_id, status_id) to a pipeline_status's (pipeline_id, id), so
-    // a Person can never point at a status of another pipeline. Qualification is NOT here - it is a
-    // read over the latest icp Scoring (ADR-0019). The old text `status` enum was retired in the
-    // additive-then-swap migration sequence (ADR-0020).
+    // a Person can never point at a status of another pipeline. The old text `status` enum was
+    // retired in the additive-then-swap migration sequence (ADR-0020).
     pipelineId: uuid("pipeline_id")
       .notNull()
       .references(() => pipeline.id, { onDelete: "restrict" }),
@@ -313,34 +310,6 @@ export const signalAdvisory = pgTable("signal_advisory", {
   createdAt: createdAt(),
 });
 
-export const scorings = pgTable(
-  "scorings",
-  {
-    id: uuid("id")
-      .primaryKey()
-      .default(sql`gen_random_uuid()`),
-    personId: uuid("person_id")
-      .notNull()
-      .references(() => person.id, { onDelete: "restrict" }),
-    rubricId: uuid("rubric_id")
-      .notNull()
-      .references(() => rubric.id, { onDelete: "restrict" }),
-    score: smallint("score").notNull(), // 1-5, or -1 for insufficient data
-    reason: text("reason"),
-    summary: text("summary"),
-    // How this score was produced (ADR-0019): `llm` = a real scorer call; `advisory` = the
-    // cheap triage advisory score promoted at approval (no LLM). The learning loop (D7) excludes
-    // `advisory` rows so the cheap pass never tunes the bar (ADR-0017 purpose preserved).
-    provenance: text("provenance").notNull().default("llm"),
-    // The LLM provider + model + prompt version that produced this score, so outcomes can
-    // be evaluated per provider+model and per prompt version over time (D7, ADR-0003). For an
-    // `advisory`-provenance row these carry the `advisory` sentinel (no real LLM call).
-    ...llmCols(),
-    scoredAt: timestamp("scored_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => [index("scorings_person_idx").on(t.personId), index("scorings_rubric_idx").on(t.rubricId)],
-);
-
 // A personalized first-touch message for a prospect (drafting). Drafts are regenerable -
 // one `selected` per prospect, prior ones `archived` (ADR-0007); "drafted" is derived from
 // this relation, not a prospect status (ADR-0008). Records provider/prompt/model for evals.
@@ -402,9 +371,9 @@ export const settings = pgTable("settings", {
   ...timestamps(),
 });
 
-// A logged result of a human-sent touch (review-queue). `score_at_time` binds the outcome
-// to the score the prospect was acted on, so the precision bar is tunable later without a
-// migration (D7). `draft_id` is nullable (a touch may use no generated draft).
+// A logged result of a human-sent touch, bound to the person and the artifact acted on. It
+// snapshots no score (ADR-0022); the learning loop (D7, deferred) will bind to signal advisory
+// data when it is designed. `draft_id` is nullable (a touch may use no generated draft).
 export const outcomes = pgTable(
   "outcomes",
   {
@@ -415,7 +384,6 @@ export const outcomes = pgTable(
       .notNull()
       .references(() => person.id, { onDelete: "restrict" }),
     draftId: uuid("draft_id").references(() => drafts.id, { onDelete: "restrict" }),
-    scoreAtTime: smallint("score_at_time").notNull(),
     result: outcomeResult("result").notNull(),
     channel: text("channel").notNull(),
     notes: text("notes"),

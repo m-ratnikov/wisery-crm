@@ -11,10 +11,9 @@ import { setMonitored } from "@/lib/posts/pipeline";
 import { enqueueFetchPosts } from "@/lib/posts/posts-queue";
 import { setPersonStatus } from "@/lib/pipeline/config";
 import { addManualLead } from "@/lib/prospect/manual";
-import { qualifyProspect } from "@/lib/qualify/pipeline";
 
 // Server Actions for the prospect-list anchor view (prospect-list D-D): thin wrappers over
-// the built enrichment/scoring/settings entry points, each revalidating the route.
+// the built enrichment/settings entry points, each revalidating the route.
 //
 // D1: unauthenticated by design (single-user MVP). Server Actions are reachable by direct
 // POST, so authorization MUST be added here at the productization milestone. This is the
@@ -46,9 +45,7 @@ export async function setAutoEnrichAction(formData: FormData): Promise<void> {
   revalidatePath(ROUTE);
 }
 
-// Add a lead by hand (ADR-0010): persist the manual prospect only. It does NOT auto-score
-// (ADR-0019) - a hand-created person has no advisory to promote and no reason to spend an LLM
-// call unasked; it starts `new` and is scored when the user clicks Re-score.
+// Add a lead by hand (ADR-0010): persist the manual prospect only, at its pipeline's entry status.
 export async function addLeadAction(formData: FormData): Promise<void> {
   await addManualLead({
     name: field(formData, "name"),
@@ -59,17 +56,8 @@ export async function addLeadAction(formData: FormData): Promise<void> {
   revalidatePath(ROUTE);
 }
 
-// Re-score a person on demand (ADR-0019): synchronous, user-triggered. The user waits and gets a
-// fresh `llm`-provenance Scoring superseding any prior (advisory or llm) row; an error surfaces to
-// the user with no background retry. This is the single on-demand scoring action.
-export async function reScoreAction(formData: FormData): Promise<void> {
-  await qualifyProspect(field(formData, "id"));
-  revalidatePath(ROUTE);
-}
-
 // Move a person to a pipeline status (ADR-0020): a quick DB write. The composite FK rejects a
 // status that belongs to another pipeline, so a malformed pair throws rather than landing silently.
-// The pipeline position is the operator's column, orthogonal to the derived qualification.
 export async function setStatusAction(formData: FormData): Promise<void> {
   await setPersonStatus(field(formData, "id"), field(formData, "statusId"));
   revalidatePath(ROUTE);

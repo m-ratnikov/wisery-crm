@@ -4,8 +4,10 @@ import { getDb } from "@/lib/db";
 import { settings } from "@/lib/db/schema";
 
 // Per-tenant app settings, config-as-data (D1). Single-row for single-tenant MVP; the
-// home of the opt-in auto-enrich flag (ADR-0007). getSettings inserts a default row if
-// none exists (idempotent), so callers always get a value.
+// home of the opt-in auto-enrich flag (ADR-0007). The flag is persisted but routes nothing
+// today - the qualify trigger it once governed is gone (ADR-0019/0022); it is reserved for a
+// future auto-enrich-on-approval. getSettings inserts a default row if none exists (idempotent),
+// so callers always get a value.
 export interface AppSettings {
   id: string;
   autoEnrich: boolean;

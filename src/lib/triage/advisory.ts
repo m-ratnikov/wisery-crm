@@ -4,13 +4,13 @@ import { signalAdvisory } from "@/lib/db/schema";
 import { getActiveRubric } from "@/lib/icp/config";
 import { type RubricKind, rubricKindSchema } from "@/lib/icp/schema";
 import type { LLMProvider } from "@/lib/llm/provider";
-import { scoreProspect } from "@/lib/qualify/scorer";
+import { scoreSubject } from "@/lib/triage/scorer";
 import { loadSignalById } from "@/lib/signals/load";
 
 // The advisory filter (universal-triage, ADR-0013/0017): score a pending signal against the rubric
-// matching its intent and store a lightweight hint for the triage lane. It writes NO Scoring row -
-// the durable per-person Scoring is created only after approval (so the advisory read can never
-// pollute the ADR-0005 learning loop). The LLM is injectable so tests run on the fake.
+// matching its intent and store a lightweight hint for the triage lane. This is the only score in
+// the system (ADR-0022) - it stays on the signal, never copied to a created entity. The LLM is
+// injectable so tests run on the fake.
 
 // Which rubric kind scores which signal kind. A non-modeled kind (job, future) falls back to the
 // buyer rubric pragmatically until its own rubric kind is configured.
@@ -48,12 +48,11 @@ export async function runAdvisoryFilter(
   if (active) {
     // A signal row satisfies PersonSubject structurally ({kind, payload}); score it against the
     // intent-matched rubric. OUTSIDE any transaction (the LLM call must not sit in one).
-    const scored = await scoreProspect(
-      { kind: signal.kind, payload: signal.payload },
-      { llm: opts.llm, rubricKind },
-    );
-    score = scored.result.score;
-    reason = scored.result.reason;
+    const scored = await scoreSubject({ kind: signal.kind, payload: signal.payload }, active, {
+      llm: opts.llm,
+    });
+    score = scored.score;
+    reason = scored.reason;
   } else {
     reason = `no active ${rubricKind} rubric; advisory unavailable for this intent`;
   }

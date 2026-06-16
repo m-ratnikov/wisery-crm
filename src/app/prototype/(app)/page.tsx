@@ -1,20 +1,54 @@
-import { Fragment } from "react";
 import Link from "next/link";
 import { SourceChip } from "./_components/SourceChip";
-import {
-  activity,
-  belowBar,
-  funnel,
-  queueSummary,
-  recentScans,
-  type FunnelStage,
-  type PipelineActivity,
-} from "./_data/home";
+import { activity, recentScans, type PipelineActivity } from "./_data/home";
+import { pendingSignals } from "./_data/signals";
+import { peopleList } from "./_data/people";
+import { feedPosts } from "./_data/feed";
 
 // The whole-app shell: a clickable view of the primary journey (the daily loop).
-// Server Component on purpose - it is read-only status and navigation, the
-// RSC-first default. The three anchor views are where judgment and interaction live.
+// Server Component on purpose - read-only status and navigation, the RSC-first
+// default. The anchor views are where judgment and interaction live. Counts are
+// derived from the mock data so the shell stays consistent with the screens.
 export default function PrototypeHome() {
+  const people = peopleList();
+  const pendingCount = pendingSignals.length;
+  const prospects = people.filter((person) => person.type === "prospect").length;
+  const monitored = people.filter((person) => person.monitored).length;
+  const needsComment = feedPosts.filter(
+    (post) => !post.comments.some((comment) => comment.status === "posted"),
+  ).length;
+
+  const steps = [
+    {
+      key: "configure",
+      label: "Configure",
+      detail: "ICP, profile, sources",
+      href: "/prototype/icp-config",
+      count: null as number | null,
+    },
+    {
+      key: "queue",
+      label: "Triage the Queue",
+      detail: "approve into people / companies",
+      href: "/prototype/queue",
+      count: pendingCount,
+    },
+    {
+      key: "people",
+      label: "Work people",
+      detail: "enrich, message, comment",
+      href: "/prototype/people",
+      count: prospects,
+    },
+    {
+      key: "feed",
+      label: "Engage the Feed",
+      detail: "comment on monitored posts",
+      href: "/prototype/feed",
+      count: needsComment,
+    },
+  ];
+
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto max-w-5xl px-8 py-10">
@@ -22,9 +56,10 @@ export default function PrototypeHome() {
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">The daily loop</h1>
             <p className="mt-2 max-w-xl text-sm leading-6 text-zinc-600 dark:text-zinc-400">
-              Configure once, then the pipeline finds, scores, and drafts in the background. You
-              work the queue: review the draft, deepen any prospect with optional enrichment, then
-              act manually. Wisery never sends (D2).
+              The pipeline scans and advisory-scores signals in the background. You triage the Queue
+              into people and companies, then work each person with on-demand actions - enrich,
+              generate a message or a comment. Every send and every comment is yours to post by hand
+              (D2).
             </p>
           </div>
           <div className="flex gap-2">
@@ -35,32 +70,45 @@ export default function PrototypeHome() {
               Configure
             </Link>
             <Link
-              href="/prototype/review-queue"
+              href="/prototype/queue"
               className="rounded-md bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-zinc-700 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-300"
             >
-              Open queue
+              Open Queue
             </Link>
           </div>
         </header>
 
         <section className="mt-8">
-          <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">Pipeline</h2>
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">The loop</h2>
           <div className="mt-3 flex items-stretch gap-2 overflow-x-auto pb-2">
-            {funnel.map((stage, index) => (
-              <Fragment key={stage.key}>
-                <StageCard stage={stage} />
-                {index < funnel.length - 1 && (
+            {steps.map((step, index) => (
+              <div key={step.key} className="flex items-stretch gap-2">
+                <Link
+                  href={step.href}
+                  className="min-w-[10rem] flex-1 rounded-lg border border-zinc-200 bg-white px-4 py-3 transition-colors hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700"
+                >
+                  <span className="flex items-baseline gap-2">
+                    <span className="text-sm font-semibold">{step.label}</span>
+                    {step.count !== null && (
+                      <span className="rounded-full bg-zinc-100 px-1.5 text-[11px] font-medium text-zinc-500 dark:bg-zinc-800">
+                        {step.count}
+                      </span>
+                    )}
+                  </span>
+                  <span className="mt-0.5 block text-xs text-zinc-500">{step.detail}</span>
+                </Link>
+                {index < steps.length - 1 && (
                   <span className="flex items-center text-zinc-300 dark:text-zinc-600" aria-hidden>
                     &rarr;
                   </span>
                 )}
-              </Fragment>
+              </div>
             ))}
           </div>
           <p className="mt-3 text-xs leading-5 text-zinc-500">
-            {belowBar} scored below the bar, kept silently for the learning loop (D7). The qualifier
-            is the cost gate: only 3+ prospects are drafted; enrichment is optional and
-            user-triggered.
+            The advisory score is a triage hint, never a gate - and the only score in the system
+            (ADR-0022). Enrichment and generation are on-demand actions on a person - spend is
+            incurred only when you click (ADR-0019).
           </p>
         </section>
 
@@ -68,14 +116,14 @@ export default function PrototypeHome() {
           <h2 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
             Running now
           </h2>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
             {activity.map((item) => (
               <ActivityCard key={item.key} item={item} />
             ))}
           </div>
           <p className="mt-3 text-xs leading-5 text-zinc-500">
-            The pipeline runs in the background as jobs. You never wait on it - work the queue, and
-            new prospects arrive as scans and drafts finish.
+            Only scan, the advisory filter, and the activity scan run as background jobs. Everything
+            else waits for your click.
           </p>
         </section>
 
@@ -100,21 +148,23 @@ export default function PrototypeHome() {
             </ul>
           </Panel>
 
-          <Panel title="Your queue">
-            <Link href="/prototype/review-queue" className="group block">
+          <Panel title="Waiting on you">
+            <Link href="/prototype/queue" className="group block">
               <p className="text-3xl font-semibold tracking-tight">
-                {queueSummary.ready}
+                {pendingCount}
                 <span className="ml-2 text-sm font-normal text-zinc-500 group-hover:text-zinc-900 dark:group-hover:text-zinc-100">
-                  prospects ready to act &rarr;
+                  signals to triage &rarr;
                 </span>
               </p>
             </Link>
-            <p className="mt-1 text-xs text-zinc-500">{queueSummary.draftedToday} drafted today.</p>
+            <p className="mt-1 text-xs text-zinc-500">
+              {monitored} people monitored · {needsComment} posts need a comment.
+            </p>
             <Link
-              href="/prototype/prospect-list"
+              href="/prototype/feed"
               className="mt-4 inline-block text-sm font-medium text-zinc-600 underline-offset-2 hover:underline dark:text-zinc-400"
             >
-              Browse all prospects &rarr;
+              Open the Feed &rarr;
             </Link>
           </Panel>
         </div>
@@ -136,41 +186,10 @@ function ActivityCard({ item }: { item: PipelineActivity }) {
         />
         <span className="text-sm font-medium">{item.label}</span>
         <span className="ml-auto text-[10px] uppercase tracking-wide text-zinc-400">
-          {running ? "running" : "queued"}
+          {running ? "running" : "idle"}
         </span>
       </div>
       <p className="mt-1 pl-4 text-xs text-zinc-500">{item.detail}</p>
-    </div>
-  );
-}
-
-function StageCard({ stage }: { stage: FunnelStage }) {
-  const body = (
-    <>
-      <span className="text-2xl font-semibold tracking-tight">{stage.count}</span>
-      <span className="mt-0.5 block text-xs text-zinc-500">{stage.label}</span>
-      {stage.emphasis && (
-        <span className="mt-1 block text-[11px] font-medium text-emerald-600 dark:text-emerald-400">
-          waiting on you &rarr;
-        </span>
-      )}
-    </>
-  );
-
-  const base = "min-w-[7rem] flex-1 rounded-lg border px-4 py-3";
-  if (stage.href) {
-    return (
-      <Link
-        href={stage.href}
-        className={`${base} border-emerald-300 bg-emerald-50 transition-colors hover:border-emerald-400 dark:border-emerald-500/40 dark:bg-emerald-500/10`}
-      >
-        {body}
-      </Link>
-    );
-  }
-  return (
-    <div className={`${base} border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900`}>
-      {body}
     </div>
   );
 }

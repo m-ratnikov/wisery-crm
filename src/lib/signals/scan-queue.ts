@@ -14,9 +14,9 @@ export async function enqueueScan(sourceId: string): Promise<string | null> {
 
 // The downstream handoff is injected at the composition root (bootstrap) as a
 // transaction-aware callback, not imported here, so signal-ingestion stays free of any
-// qualification dependency. runScan calls it inside each newly persisted signal's insert
-// transaction, so the signal and its qualify job commit atomically (ADR-0009, qualification
-// D-G); a dedup duplicate inserts nothing and hands off nothing.
+// downstream dependency. runScan calls it inside each newly persisted signal's insert
+// transaction, so the signal and its advisory-filter job commit atomically (ADR-0009);
+// a dedup duplicate inserts nothing and hands off nothing.
 export interface ScanWorkerOptions {
   enqueueNext?: (tx: DbTx, signalId: string, kind: string) => Promise<void>;
 }

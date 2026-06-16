@@ -1,13 +1,14 @@
 import Link from "next/link";
 
 // The signed-in app shell: sidebar + main. Scoped to the (app) route group so the
-// auth screens (one level up, outside this group) render without it. The three
-// anchor views the product commits to (product-overview section 2), ordered as the
-// daily loop runs: configure, then work the list and the queue.
+// auth screens (one level up, outside this group) render without it. The anchor
+// views the product commits to (product-overview section 2), ordered as the daily
+// loop runs: configure, triage the Queue, work people, engage from the Feed.
 const anchorViews = [
-  { href: "/prototype/icp-config", label: "ICP & source config", badge: "#1", live: true },
-  { href: "/prototype/prospect-list", label: "Prospect list", badge: "#3", live: true },
-  { href: "/prototype/review-queue", label: "Review & approve queue", badge: "#2", live: true },
+  { href: "/prototype/queue", label: "Queue", badge: "◧", live: true },
+  { href: "/prototype/people", label: "People & companies", badge: "◍", live: true },
+  { href: "/prototype/feed", label: "Feed", badge: "≋", live: true },
+  { href: "/prototype/icp-config", label: "ICP & source config", badge: "⚒", live: true },
 ];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {

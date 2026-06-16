@@ -4,9 +4,8 @@ import type { DbTx } from "@/lib/db";
 import { logger } from "@/lib/log";
 import { enrichProspect } from "@/lib/enrich/pipeline";
 
-// One enrich job per prospect. Triggered manually (single), in a batch (grid multi-select),
-// or by the auto-enrich routing - all from the composition root, so enrichment never
-// imports the next stage (the re-draft is wired via the worker's enqueueNext). Enrichment D-E.
+// One enrich job per prospect. Triggered manually (single) or in a batch (grid multi-select).
+// Wired from the composition root, so enrichment never imports the next stage. Enrichment D-E.
 const ENRICH_QUEUE = "enrich";
 
 // User-triggered (fire-and-forget) enrich enqueue: the prospect-list single "Enrich" action.
@@ -26,8 +25,10 @@ export async function enqueueEnrichForProspects(prospectIds: string[]): Promise<
   }
 }
 
-// Pipeline handoff: enqueue enrich ON the caller's transaction (the qualify prospect-write tx
-// when auto-enrich is on), so the prospect and its enrich job commit atomically (ADR-0009).
+// Transaction-aware enqueue seam: enqueue enrich ON the caller's transaction so the entity write
+// and its enrich job commit atomically (ADR-0009). Intentionally retained with no caller today -
+// it is the seam a future auto-enrich-on-approval would call from the approval transaction (the
+// qualify-time auto-enrich path it once served is gone, ADR-0019/0022).
 export async function enqueueEnrichInTx(tx: DbTx, personId: string): Promise<string | null> {
   return enqueueInTx(tx, ENRICH_QUEUE, { personId }, { singletonKey: personId });
 }

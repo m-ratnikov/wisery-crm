@@ -4,9 +4,10 @@ import { getSettings } from "@/lib/enrich/settings";
 import { saveGuidanceAction, saveSettingsAction } from "./actions";
 
 // The wired settings screen (app-shell): the app-wide home of the per-tenant settings row,
-// starting with the auto-enrich flag (ADR-0007). prospect-list also exposes auto-enrich
-// contextually; both write the one settings row through the single setAutoEnrich seam, so
-// the authoritative representation stays single (config-as-data, D1).
+// starting with the auto-enrich flag (ADR-0007). The flag is persisted but routes nothing today -
+// it is reserved for a future auto-enrich-on-approval (ADR-0019/0022). prospect-list also exposes
+// auto-enrich contextually; both write the one settings row through the single setAutoEnrich seam,
+// so the authoritative representation stays single (config-as-data, D1).
 //
 // D1: authorization is deferred (single-user MVP); the Server Action is unauthenticated by design.
 
@@ -31,8 +32,8 @@ export default async function SettingsPage() {
         <section className="rounded-lg border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900">
           <h2 className="text-sm font-semibold">Enrichment</h2>
           <p className="mt-0.5 text-xs text-zinc-500">
-            Deep enrichment is user-triggered by default (ADR-0007). Turn this on to enrich every
-            qualified prospect automatically.
+            Deep enrichment is user-triggered (ADR-0007). This setting is saved but does not enrich
+            anything automatically yet - it is reserved for auto-enrich-on-approval.
           </p>
           <form
             action={saveSettingsAction}
@@ -46,7 +47,7 @@ export default async function SettingsPage() {
                 defaultChecked={settings.autoEnrich}
                 className="h-4 w-4 rounded border-zinc-300 dark:border-zinc-600"
               />
-              Auto-enrich qualified person
+              Auto-enrich on approval (saved, not yet active)
             </label>
             <button
               type="submit"

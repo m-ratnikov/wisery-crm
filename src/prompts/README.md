@@ -11,5 +11,6 @@ Versioned prompt artifacts for LLM calls made through the `LLMProvider` port
 - Prompts over ~1024 tokens are cached automatically by the Anthropic adapter
   (`cache_control` ephemeral, 1h) - callers do not set caching.
 
-No concrete prompt lives here yet; `qualification` and `drafting` add the first ones
-(the ICP-scoring and first-touch-draft prompts) when those capabilities land.
+Current prompts: `icp_score_v1` (the rubric scorer behind the signal advisory filter -
+the only score in the system, ADR-0022), plus the comment and message generation prompts
+(ADR-0018/0021).

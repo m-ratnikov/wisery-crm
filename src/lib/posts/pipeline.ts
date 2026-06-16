@@ -10,8 +10,7 @@ import { loadProspectById } from "@/lib/prospect/load";
 
 // The testable posts core (engagement-posts, ADR-0018): fetch a person's recent posts via the
 // EnrichmentProvider port and idempotently upsert them on `(person_id, dedup_key)`. Works for ANY
-// person (a monitored prospect or a peer), not just an actionable one - so it does not reuse
-// loadActionableProspect's status gate. The provider is injectable so tests use the fake. db-only.
+// person (a monitored prospect or a peer). The provider is injectable so tests use the fake. db-only.
 export interface FetchPostsOutcome {
   personId: string;
   fetched: number;

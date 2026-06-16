@@ -134,6 +134,13 @@
       "when": 1780916298391,
       "tag": "0018_handy_abomination",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1781285165609,
+      "tag": "0019_dazzling_blindfold",
+      "breakpoints": true
     }
   ]
 }

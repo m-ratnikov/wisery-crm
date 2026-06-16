@@ -11,16 +11,19 @@ cross-cutting concerns in [cross-cutting.md](cross-cutting.md); the decisions be
 [ADR-0006](../adr/0006-pre-code-l3-component-view.md), the engagement/triage slice
 [ADR-0013](../adr/0013-universal-triage-intake.md)..[ADR-0018](../adr/0018-engagement-artifacts-post-comment.md),
 and the engagement-rework slice [ADR-0019](../adr/0019-generation-and-scoring-on-demand.md)
-(on-demand generation/scoring, the drafting stage and `qualify-prospect` worker retired),
+(on-demand generation, the drafting stage and `qualify-prospect` worker retired),
 [ADR-0020](../adr/0020-configurable-pipelines-for-person-status.md) (configurable pipelines),
-[ADR-0021](../adr/0021-linkedin-message-entity.md) (the Message entity).
+[ADR-0021](../adr/0021-linkedin-message-entity.md) (the Message entity), and
+[ADR-0022](../adr/0022-signal-advisory-is-the-only-score.md) (person scoring removed - the scoring core
+narrows to the advisory filter, the re-score action and qualification read are gone).
 
 Promoted from change `c4-level2-architecture` (2026-05-24); the C4 L3 component section added by
 `c4-level3-and-domain-model` (2026-05-26); the universal-triage and engagement runtime flows and
 components added by `content-marketing-engagement` (2026-06-07); the drafting stage removed, the
-on-demand generation/scoring flows, the Message generator, and the pipeline module added by
-`engagement-rework` (2026-06-08). Containers are unchanged - the work is components inside the existing
-app container, no new container or port. Flat at the top of the
+on-demand generation flows, the Message generator, and the pipeline module added by
+`engagement-rework` (2026-06-08); person scoring removed and the scoring core narrowed to the advisory
+filter by `adr-signal-only-scoring` (2026-06-13, ADR-0022). Containers are unchanged - the work is
+components inside the existing app container, no new container or port. Flat at the top of the
 architecture folder while there is a single implicit area (README rule 5).
 
 ## Containers
@@ -52,7 +55,7 @@ flowchart TB
     app -->|"jobs (Postgres wire, direct pg-boss pool)"| db
     app -->|"pull sources (HTTPS)"| src
     app -.->|"pull / expand / deep-enrich (HTTPS) - provider path"| dp
-    app -->|"advisory-score + generate/re-score on demand (HTTPS, carries PII)"| llm
+    app -->|"advisory-score + generate on demand (HTTPS, carries PII)"| llm
 
     classDef internal fill:#cfe3ff,stroke:#4a78b5,color:#10243e;
     classDef external fill:#ececec,stroke:#9a9a9a,color:#1f1f1f;
@@ -116,16 +119,16 @@ The highest-judgment flows, all consistent with the [L1 boundary flow](system-co
 are dynamic views over the containers above; because the web and worker are one container, the app
 appears once and a note marks when it is acting in its in-process worker capacity (ADR-0001). Post-intake
 work is no longer an automatic scan-to-queued-draft pipeline: approval is a synchronous Queue action
-that promotes the advisory score into an initial Scoring (no LLM, no downstream job), and generation /
-re-scoring / enrichment are on-demand Person actions (ADR-0019). The scheduled scan and advisory-filter
+that creates the routed entity and writes no score (the advisory stays on the signal, ADR-0022), and
+generation / enrichment are on-demand Person actions (ADR-0019). The scheduled scan and advisory-filter
 flow is the "Scan to triage decision" sequence below.
 
-### Approve a signal from the Queue (no auto-pipeline, no LLM)
+### Approve a signal from the Queue (entity only - no score, no LLM, no job)
 
-The approval reframe ([ADR-0019](../adr/0019-generation-and-scoring-on-demand.md)): approving a signal
-in the Queue is a synchronous server action that creates the routed entity and, for a person/peer,
-promotes the already-computed advisory score into an `advisory`-provenance initial Scoring in the same
-transaction - no LLM call, no enqueue, so nothing downstream can strand.
+The approval reframe ([ADR-0022](../adr/0022-signal-advisory-is-the-only-score.md), narrowing
+[ADR-0019](../adr/0019-generation-and-scoring-on-demand.md)): approving a signal in the Queue is a
+synchronous server action that creates the routed entity and the decision row, nothing else. No score
+is written - the advisory stays on the signal; no LLM call, no enqueue, so nothing downstream can strand.
 
 ```mermaid
 sequenceDiagram
@@ -135,20 +138,18 @@ sequenceDiagram
     U->>App: Create Person from a signal (Queue)
     Note over App: acting as server action - Queue approve
     App->>DB: begin tx
-    App->>DB: write SignalDecision(approved, UNIQUE on signal_id)
     App->>DB: create Person (status = default entry status Cold, pipeline_id)
-    App->>DB: resolve active rubric of advisory kind
-    App->>DB: write initial Scoring IF rubric exists (advisory score or -1, provenance = advisory)
+    App->>DB: write SignalDecision(approved, UNIQUE on signal_id)
     App->>DB: commit tx
-    App-->>U: person created with its initial assessment, item drops from Queue
-    Note over App,DB: no LLM call (advisory score reused), company approval writes no Scoring, no rubric means unassessed, no downstream job to strand (ADR-0009 has nothing to hand off)
+    App-->>U: person created, item drops from Queue
+    Note over App,DB: no score written (advisory stays on the signal), no LLM call, no downstream job to strand (ADR-0009 has nothing to hand off)
 ```
 
 ### Work a person on demand (generate a message)
 
-The on-demand reframe: generating a message or comment, re-scoring, and enriching are synchronous
-server actions on the Person, each writing one row per call, with spend incurred only on the click
-(ADR-0019, ADR-0021).
+The on-demand reframe: generating a message or comment and enriching are synchronous server actions on
+the Person, each writing one row per call, with spend incurred only on the click (ADR-0019, ADR-0021).
+There is no re-score action - a person carries no score (ADR-0022).
 
 ```mermaid
 sequenceDiagram
@@ -193,8 +194,8 @@ sequenceDiagram
     App->>DB: attach advisory result to the triage read-model
     U->>App: open the Queue, approve (Create Person/Company) or dismiss
     alt approve
-        Note over App,DB: one tx - no LLM, no downstream enqueue (ADR-0019)
-        App->>DB: SignalDecision approved, route by kind (Person / Company / author-as-peer + Post), promote advisory score into an advisory-provenance initial Scoring when a rubric of its kind exists
+        Note over App,DB: one tx - no score, no LLM, no downstream enqueue (ADR-0022)
+        App->>DB: SignalDecision approved, route by kind (Person / Company / author-as-peer + Post) - the advisory stays on the signal, nothing copied onto the entity
     else dismiss
         App->>DB: SignalDecision dismissed (a later re-scan cannot resurface it)
     end
@@ -279,7 +280,7 @@ flowchart TB
 
         subgraph cores["Domain cores - role-agnostic, depend on db only"]
             cscan["signals pipeline<br/>dedup + persist + scan counts"]
-            cscore["scoring core<br/>score a person vs the rubric (re-score reuses this)"]
+            cscore["advisory scorer core<br/>score a signal vs its kind's rubric (triage only)"]
             cenrich["enrichment core<br/>builds dossier"]
             cmsg["message generator<br/>LinkedIn message on demand"]
             cpipe["pipeline core<br/>seed + read + status setter"]
@@ -302,7 +303,7 @@ flowchart TB
         end
 
         subgraph prompts["Prompts - src/prompts/&lt;name&gt;_v&lt;n&gt;"]
-            pq["qualify prompt"]
+            pq["advisory scorer prompt"]
             pm["linkedin message prompt"]
         end
 
@@ -325,7 +326,6 @@ flowchart TB
     queue --> handlers
     handlers --> db
     handlers --> jobs
-    handlers --> cscore
     handlers --> cmsg
     handlers --> cpipe
 
@@ -409,12 +409,12 @@ flowchart LR
 | Component | Responsibility | Seam / port | Role | Owning capability |
 |---|---|---|---|---|
 | ICP and source config | Edit rubric, profile, and sources as data (anchor #1) | - | web | icp-config |
-| Person list + workspace | Browse and manage people and signals; the per-person workspace runs the on-demand actions (generate message/comment, re-score, enrich, set pipeline status) (anchor #3) | reads `db`, calls cores | web | person-list |
-| Queue - the unified intake | The sole intake surface: every undecided signal, advisory-scored and filterable, with Create Person/Company + dismiss; promotes the advisory score into an initial Scoring on approval (`signals LEFT JOIN signal_advisory LEFT JOIN signal_decisions`) (anchor #2) | reads `db` | web | universal-triage |
+| Person list + workspace | Browse and manage people and signals; the per-person workspace runs the on-demand actions (generate message/comment, enrich, set pipeline status) - no score or qualification is shown (anchor #3) | reads `db`, calls cores | web | person-list |
+| Queue - the unified intake | The sole intake surface: every undecided signal, advisory-scored and filterable, with Create Person/Company + dismiss; approval creates the entity only - the advisory stays on the signal, no score is written (`signals LEFT JOIN signal_advisory LEFT JOIN signal_decisions`) (anchor #2) | reads `db` | web | universal-triage |
 | Route handlers / Server actions | RSC reads, the enqueue-scan trigger, the synchronous on-demand actions, outcome logging | reads `db`, calls `jobs` + cores | web | each anchor view |
 | Composition root | Start jobs, register workers and adapters - the only `kind -> instance` wiring point | `jobs`, `psrc` registry | boot | platform-runtime |
 | scan handler -> signals pipeline | Claim source, run connector, dedup, persist, tally | `SignalSource` via registry | worker | signal-ingestion |
-| scoring core | Score a person against the active in-kind rubric; reused by the synchronous re-score server action and the advisory-filter handler (no `qualify-prospect` worker) | `LLMProvider` | both | qualification |
+| advisory scorer core | Score a signal against the active rubric matching its kind; called only by the advisory-filter handler at triage - the only scoring path (no person scoring, ADR-0022) | `LLMProvider` | worker | universal-triage |
 | enrich handler -> enrichment core | Deep-enrich a person into a dossier (user-triggered from the workspace) | `EnrichmentProvider` | worker | enrichment |
 | message generator | Generate a LinkedIn message (connection_request \| message) on demand, one row per call (synchronous server action) | `LLMProvider` | web | messaging |
 | pipeline core | Seed the default pipeline + statuses, read them, and set a person's status | reads `db` | web | pipelines |
@@ -425,10 +425,10 @@ flowchart LR
 | Connectors (fixture [test/dev only], linkedin-search, x-posts) | Fetch + normalize one source kind | implement `SignalSource` | worker | source-adapters; fixture from signal-ingestion |
 | Enrichment adapters (Apify, self-host browser) | Deep-enrich / scrape per the cost knob | implement `EnrichmentProvider` | worker | enrichment |
 | Anthropic adapter | Default LLM via Structured Outputs + 1h cache | implements `LLMProvider` | both | llm-provider |
-| Prompts | Versioned qualify / LinkedIn message / comment prompts for `prompt_version` traceability | consumed by cores | both | qualification, messaging, engagement |
+| Prompts | Versioned advisory-scorer / LinkedIn message / comment prompts for `prompt_version` traceability | consumed by cores | both | universal-triage, messaging, engagement |
 | config / db / jobs / log | The reused platform facades - no parallel mechanisms | - | both | platform-runtime, background-jobs |
 | Feed | Monitored people's posts; draft + mark-posted comments inline (anchor #4) | reads `db` | web | engagement |
-| advisory-filter handler -> filter core | Score a signal by the rubric matching its intent; advisory only, writes no Scoring row | `LLMProvider` (own queue) | worker | universal-triage |
+| advisory-filter handler -> advisory scorer core | Score a signal by the rubric matching its intent; the advisory written onto the signal is the only score (no person score, ADR-0022) | `LLMProvider` (own queue) | worker | universal-triage |
 | activity-scan dispatcher | Enqueue one fetch-posts job per monitored person (per-unit isolation) | `jobs` | worker | engagement |
 | fetch-posts handler -> posts core | Fetch a person's posts, idempotent upsert on `(person_id, dedup_key)` | `EnrichmentProvider.fetchPosts` | worker | engagement |
 | comment-generation core | Generate a comment from person info + guidance (synchronous server action, not a queue handler) | `LLMProvider` | web | engagement |
@@ -446,20 +446,19 @@ only at the composition root), so they extend the skeleton above rather than red
 
 - **Queue** (anchor #2) is the single intake surface: it reads every undecided signal
   (`signals LEFT JOIN signal_advisory LEFT JOIN signal_decisions`) plus the advisory result, is
-  filterable by score, and records Create Person/Company or dismiss. Approval promotes the advisory
-  score into the person's `advisory`-provenance initial Scoring in the same transaction (no LLM). The
-  former separate Triage and Review & approve surfaces are gone - there is no `queued` send lane,
-  because there is no automatic drafting output to review (ADR-0019); sending is a manual act from the
-  Person workspace or the Feed (D2).
+  filterable by score, and records Create Person/Company or dismiss. Approval creates the routed entity
+  only - the advisory stays on the signal, no score is written (ADR-0022). The former separate Triage
+  and Review & approve surfaces are gone - there is no `queued` send lane, because there is no automatic
+  drafting output to review (ADR-0019); sending is a manual act from the Person workspace or the Feed (D2).
 - **Feed** (anchor #4): a new RSC surface over monitored people's posts; opens a post detail
   (post + person-360) where comments are drafted and marked posted.
 - **Person workspace** (on the Person list / detail) runs the on-demand actions: generate a LinkedIn
-  message (via the message generator), generate a comment, re-score (reusing the scoring core), enrich,
-  and set the pipeline status; plus the "get latest posts" action and the message/posts/comments
-  history.
-- **advisory-filter handler -> filter core**: its own capped-concurrency pg-boss queue; runs the
-  rubric matching a signal's intent and writes the advisory result to the triage read-model
-  (via `LLMProvider`), writing no `Scoring` row.
+  message (via the message generator), generate a comment, enrich, and set the pipeline status; plus the
+  "get latest posts" action and the message/posts/comments history. No score or qualification is shown -
+  a person carries no score (ADR-0022).
+- **advisory-filter handler -> advisory scorer core**: its own capped-concurrency pg-boss queue; runs
+  the rubric matching a signal's intent and writes the advisory result onto the signal
+  (via `LLMProvider`) - the only scoring path in the system.
 - **activity-scan dispatcher**: a cron handler that enqueues one fetch-posts job per monitored person
   (per-unit isolation), reusing the fetch-posts handler rather than looping over people in one job.
 - **fetch-posts handler -> posts core**: post fetch via `EnrichmentProvider.fetchPosts` (a new method
@@ -480,14 +479,14 @@ no-rewrite peel into a standalone `worker.ts` stays available. The peel-safety i
 worker components share state only through Postgres (rows + pg-boss jobs) - no module-level mutable
 singletons, no in-process cache or event bus, no transaction spanning a request handler and a job.
 The domain cores are deliberately role-agnostic and depend on `db` only, so the same core is callable
-from a handler or a worker without dragging in queue or HTTP concerns - the scoring core, for instance,
-is reused by both the synchronous re-score server action and the advisory-filter handler. Where a
+from a handler or a worker without dragging in queue or HTTP concerns - the advisory scorer core, for
+instance, is called by the advisory-filter handler at triage. Where a
 worker stage must both write rows and enqueue the next job (the scan slice persisting Signals and
 enqueuing one advisory-filter job each), the job handler, not the core, owns one Drizzle transaction
 passed to both the repo and `jobs.enqueue` (pg-boss `send` shares the same Postgres), so the writes and
 their follow-on jobs commit atomically while the core stays db-only. This is within a single job
 handler, so it does not violate the no-transaction-spanning-a-request-and-a-job invariant. The
-on-demand Person actions (message/comment generation, re-score) are synchronous server actions that
+on-demand Person actions (message/comment generation, enrich) are synchronous server actions that
 write one row and enqueue nothing, so they raise no handoff concern at all. The self-host browser is a
 separate OS process the browser adapter spawns on demand (ADR-0002), drawn as the external
 `Headless browser` box.
@@ -501,7 +500,7 @@ file plus one registry line - never a change to a core, a port, or the pipeline.
 `SignalSource` today; `enrichment` and `llm-provider` extend it to their ports when they land. The
 build-enforced rule covers the adapter seam; the db-only and web/worker-share-only-via-Postgres
 invariants are reviewed convention, not yet build-enforced (a cores-must-not-import-jobs rule is a
-candidate to add when qualification lands).
+candidate to add later).
 
 ### L3 runtime flow - scan slice internals
 
@@ -565,7 +564,7 @@ sequenceDiagram
     participant SC as signals pipeline core (db-only)
     participant DB as Postgres (app tables + pg-boss tables)
     participant AH as advisory-filter handler (worker role)
-    participant AC as scoring core (db-only)
+    participant AC as advisory scorer core (db-only)
     participant LLM as LLM provider (external)
 
     Note over Boot: at startup registers each worker and injects enqueueNext(tx, ids), the only place that knows scan to advisory-filter
@@ -582,13 +581,13 @@ sequenceDiagram
     AH->>AC: advisoryScore(signalId), the rubric matching the signal's intent
     AC->>LLM: advisory score (HTTPS, carries PII), OUTSIDE any transaction
     LLM-->>AC: advisory result
-    AC->>DB: attach the advisory result to the triage read-model (writes no Scoring)
+    AC->>DB: write the advisory result onto the signal (the only score - no person score)
     Note over AH,AC: a handler error propagates so pg-boss retries then dead-letters (ADR-0001), and singletonKey keeps it idempotent
 ```
 
 Pipeline handoffs use `enqueueInTx` (atomic, above). User-triggered enqueues (the "Enrich" action) are
 not handoffs and use the fire-and-forget `enqueue` instead: their failure surfaces to the user who
-retries, so they need no shared transaction (ADR-0009). The on-demand generation and re-score actions
+retries, so they need no shared transaction (ADR-0009). The on-demand generation actions
 are synchronous server actions that enqueue nothing at all. The same seam carries the policy branch the
 pipeline may grow: what a stage's `enqueueNext` enqueues (or whether it enqueues at all) is decided at
 the composition root, a routing choice there, not a change to any core.

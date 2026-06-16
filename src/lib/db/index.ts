@@ -23,8 +23,8 @@ export function getDb() {
 }
 
 // The top-level db handle. A stage's persist helper takes `Db | DbTx` so it runs either standalone
-// (re-score, a single insert that needs no transaction) or inside a `db.transaction` (the discovered
-// path, atomic with the prospect insert).
+// (a single insert that needs no transaction) or inside a `db.transaction` (e.g. approval's
+// entity + decision writes, atomic).
 export type Db = ReturnType<typeof getDb>;
 
 // The transaction handle drizzle passes to a `db.transaction(async (tx) => ...)` callback.

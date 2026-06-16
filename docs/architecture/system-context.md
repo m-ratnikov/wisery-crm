@@ -12,13 +12,17 @@ Related: [product-overview.md](../product-overview.md) (the spine, locked decisi
 no new external system, and the post author is reached only by a manual human action like the Prospect.
 The `engagement-rework` change (2026-06-08) leaves the external boundary unchanged; internally the
 split Triage + Review & approve surfaces collapse into one **Queue**, and post-intake work (generate a
-message or comment, re-score, enrich) becomes on-demand calls to the LLM and enrichment providers
-rather than an automatic pipeline (ADR-0019).
+message or comment, enrich) becomes on-demand calls to the LLM and enrichment providers rather than an
+automatic pipeline (ADR-0019). The `adr-signal-only-scoring` change (2026-06-13) narrows the LLM's
+scoring role to the per-signal advisory filter only - person scoring is removed, the advisory on the
+signal is the only score (ADR-0022). The diagram below also lands the engagement-rework's deferred L1
+label updates (the prior labels still read "review + approve" / "qualify and draft"), so the edges now
+reflect the unified Queue, on-demand generation, and signal-only scoring together.
 
 ```mermaid
 flowchart TB
     user["CRM user<br/>freelancer / solopreneur / developer / consultant"]
-    prospect["Prospect<br/>end recipient"]
+    prospect["Prospect / engagement target<br/>end recipient"]
 
     subgraph boundary[" "]
         sys["Wisery CRM"]
@@ -29,22 +33,22 @@ flowchart TB
     llm["LLM provider<br/>e.g. Anthropic (default)"]
     db[("Managed Postgres<br/>datastore")]
 
-    user -->|"configure ICP, profile, sources; review + approve"| sys
-    sys -->|"qualified prospects, dossier, optional draft"| user
+    user -->|"configure ICP, profile, sources; triage the Queue; work a person"| sys
+    sys -->|"queued signals with advisory scores, people, on-demand messages and comments"| user
     src -->|"raw source records"| sys
     sys -.->|"scrape / enrich (only when a provider is used)"| dp
     dp -.->|"raw records / enrichment"| sys
-    sys -->|"qualify and draft prompts"| llm
-    llm -->|"scores and drafts"| sys
-    sys <-->|"reads/writes app data"| db
-    user -->|"acts manually via chosen channel"| prospect
+    sys -->|"advisory-filter, message and comment prompts"| llm
+    llm -->|"advisory scores (signals only), messages, comments"| sys
+    sys -->|"reads/writes app data"| db
+    user -->|"posts messages and comments manually via the channel"| prospect
 ```
 
 What crosses each boundary:
-- **CRM user <-> system**: inbound config (ICP, profile, sources) and approvals; outbound qualified prospects, dossiers, and optional drafts. This is the anchor-view surface.
+- **CRM user <-> system**: inbound config (ICP, profile, sources) and triage approvals; outbound advisory-scored queued signals, people, dossiers, and on-demand messages/comments. This is the anchor-view surface.
 - **Signal sources -> system**: inbound raw source records (a person, company, piece of content, or job posting), pulled per the connector seam (D4).
 - **Scraping / enrichment provider <-> system** (optional, pluggable): when one is used, outbound scrape/enrich requests and inbound raw records / enrichment (normalized at our edge, D4), behind the D4 interfaces. Apify is one example; the system can instead self-host scraping (Puppeteer/Playwright) and reach sources directly, with no external provider. The same provider class can serve both signal capture and enrichment.
-- **LLM provider <-> system**: outbound qualify/draft prompts, inbound scores and drafts. Provider-agnostic behind an `LLMProvider` port, Anthropic the default adapter (D9). Carries prospect PII.
+- **LLM provider <-> system**: outbound advisory-filter prompts (scoring each signal at triage - the only scoring) plus on-demand message/comment prompts; inbound advisory scores, messages, comments. Provider-agnostic behind an `LLMProvider` port, Anthropic the default adapter (D9). Carries prospect PII.
 - **Managed Postgres <-> system**: the system's own managed datastore. Shown as a dependency because it is hosted, but it holds our own schema (not a third-party system of record). How async jobs run on it is an L2/technology concern, fixed by ADR-0001.
 - **CRM user -> Prospect**: a manual human action through the chosen channel. The system has no edge to the Prospect (ToS-safe, D2).
 - **CRM user -> Engagement target** (a peer or buyer whose post is commented on): also a manual human action - the system drafts the comment but never posts it (D2), the same human-only recipient edge as the Prospect. The engagement motion (content-marketing-engagement) introduces **no new external system**: a person's posts and deep profile arrive through the existing scraping/enrichment provider (a new `fetchPosts` method on the `EnrichmentProvider` port), comments through the existing `LLMProvider` port.
@@ -64,21 +68,26 @@ sequenceDiagram
 
     U->>S: configure ICP, profile, sources
     SRC->>S: raw source records (scan)
-    opt a provider is used (else self-hosted scraping)
-        S->>DP: expand / deep-enrich
-        DP-->>S: people / enrichment
+    S->>LLM: advisory-score each new signal (rubric matching its kind)
+    LLM-->>S: advisory result (the only score)
+    S->>U: surface the Queue (signals with advisory hints)
+    U->>S: approve (Create Person/Company) or dismiss
+    opt on demand, on a person (provider used, else self-hosted)
+        S->>DP: deep-enrich
+        DP-->>S: enrichment
     end
-    S->>LLM: qualify (and draft, if enabled)
-    LLM-->>S: scores (and drafts)
-    S->>U: surface qualified prospects + dossier + draft
-    U->>P: act manually via chosen channel
+    U->>S: generate a message or comment (on demand)
+    S->>LLM: generation prompt
+    LLM-->>S: message / comment draft
+    U->>P: post manually via chosen channel
     U->>S: log outcome
 ```
 
-The "qualify (and draft, if enabled)" step is now resolved at L2: qualify uses the cheap signal as
-the cost gate and records an ICP score per person (a Scoring against the prospect, not the signal),
-and the first-touch draft is a separate LLM call after deep enrichment, grounded in the dossier (D5,
-refined by ADR-0005). The container-level flows are in [system-design.md](system-design.md).
+The advisory-score step is resolved at L2: the advisory filter scores each signal against the rubric
+matching its kind and records the result on the signal (`signal_advisory`) - the only score in the
+system, a triage hint, never a per-person score (ADR-0022). Approval creates the entity and writes no
+score; generation is a separate on-demand LLM call grounded in the person's info and dossier. The
+container-level flows are in [system-design.md](system-design.md).
 
 ## Scope notes
 

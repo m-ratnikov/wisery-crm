@@ -12,17 +12,19 @@ Anchor view #3: the browse/manage grid over every prospect across the pipeline -
 ## Requirements
 ### Requirement: The prospect list shows every prospect with its pipeline state
 
-The system SHALL present a browse/manage list of all prospects, each with its disposition status, latest score, source, and whether it has been enriched (a dossier exists) and drafted (a selected draft exists). The enriched and drafted facets SHALL be derived from the presence of the dossier and selected draft, not from the status. A user SHALL be able to filter the list (e.g. by status or score) and open a prospect to see its score reasoning, its selected draft, and its dossier.
+The system SHALL present a browse/manage list of all people, each with its identity, its pipeline status, its source, and whether it has been enriched (a dossier exists). The enriched facet SHALL be derived from the presence of the dossier, not from the status. A user SHALL be able to filter the list (e.g. by pipeline status) and open a person to see its detail, including its dossier when one exists. The list and detail SHALL NOT present a per-person score or a qualification verdict - the advisory score lives on the originating signal, in the triage lane where the judgment happened.
 
-#### Scenario: The list reflects each prospect's state
+#### Scenario: The list reflects each person's state
 
 - **WHEN** a user opens the prospect list
-- **THEN** each prospect is shown with its status, latest score, source, and its derived enriched/drafted facets
+- **THEN** each person is shown with its identity, pipeline status, source, and its derived enriched facet
+- **AND** no score column or qualification badge is shown
 
-#### Scenario: A prospect's detail shows its score, draft, and dossier
+#### Scenario: A person's detail carries no score
 
-- **WHEN** a user opens a prospect's detail
-- **THEN** its latest scoring, its selected draft, and its dossier (if any) are shown
+- **WHEN** a user opens a person's detail
+- **THEN** its identity, pipeline status, and dossier (if any) are shown
+- **AND** no score, score reasoning, or qualification verdict appears
 
 ### Requirement: The user triggers enrichment and re-drafting from the list
 
@@ -40,30 +42,35 @@ The system SHALL let a user trigger enrichment for a single prospect or for a mu
 
 ### Requirement: The user controls auto-enrich from the list
 
-The system SHALL let a user turn the auto-enrich setting on or off from the prospect list, and the chosen value SHALL govern whether newly qualified prospects are enriched automatically.
+The system SHALL let a user turn the auto-enrich setting on or off from the prospect list, and SHALL persist the chosen value. The setting does NOT currently route any enrichment - the qualification trigger it once governed no longer exists (ADR-0019, ADR-0022) - and it is reserved for a future auto-enrich-on-approval (auto-enqueueing enrichment when the user approves a signal). Enrichment today is triggered only by the explicit single and batch actions.
 
-#### Scenario: Toggling auto-enrich
+#### Scenario: Toggling auto-enrich persists the setting
 
 - **WHEN** a user turns auto-enrich on (or off)
-- **THEN** the setting is persisted and governs subsequent qualification routing
+- **THEN** the setting is persisted
+
+#### Scenario: The setting routes no enrichment today
+
+- **WHEN** auto-enrich is on and a person is created (by approval or by hand)
+- **THEN** no enrichment is enqueued automatically - enrichment is requested only by the explicit single or batch action
 
 ### Requirement: Manual-origin prospects appear alongside discovered ones
 
-The system SHALL show a manual-origin prospect in the prospect list - and, once it is queued, in the review queue - with the same identity, score, and status fields as a discovered prospect, so the CRM user works one list regardless of origin. Including manual prospects SHALL NOT drop or alter how discovered prospects appear.
+The system SHALL show a manual-origin person in the prospect list with the same identity and pipeline status fields as a discovered person, so the CRM user works one list regardless of origin. Including manual people SHALL NOT drop or alter how discovered people appear.
 
 #### Scenario: A manual prospect appears in the list
 
-- **WHEN** a manual prospect exists
-- **THEN** it appears in the prospect list with its entered identity and, once scored, its score and status
+- **WHEN** a manual person exists
+- **THEN** it appears in the prospect list with its entered identity and its pipeline status
 
 #### Scenario: Discovered prospects are unaffected
 
-- **WHEN** the prospect list is shown with both discovered and manual prospects
-- **THEN** each discovered prospect appears exactly as before, and manual prospects appear alongside them
+- **WHEN** the prospect list is shown with both discovered and manual people
+- **THEN** each discovered person appears exactly as before, and manual people appear alongside them
 
-### Requirement: The prospect list offers add-lead and re-qualify affordances
+### Requirement: The prospect list offers an add-lead affordance
 
-The system SHALL present, on the prospect list, an affordance to add a lead by hand and - for a manual prospect still unscored - an affordance to re-qualify it.
+The system SHALL present, on the prospect list, an affordance to add a lead by hand that opens the manual-entry form.
 
 #### Scenario: Add-lead affordance is present
 

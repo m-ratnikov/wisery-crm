@@ -1,4 +1,4 @@
-// Architectural fitness functions (quality-harness, ADR-aligned). These encode
+﻿// Architectural fitness functions (quality-harness, ADR-aligned). These encode
 // our seams as build-failing rules so the architecture is protected by the build,
 // not by convention. Run via `npm run depcruise` (part of `verify`).
 //
@@ -87,7 +87,7 @@ module.exports = {
       comment:
         "L0 pure-kernel files (ports, *-view, *-map, and the listed pure domain rules) must not have a runtime dependency on the DB connection (src/lib/db/index.ts), the jobs facade, or the logger, so the domain core stays portable. db/schema (DDL-as-data) and type-only imports are allowed. See docs/module-conventions.md.",
       from: {
-        path: "^src/lib/.*(-view|-map)\\.ts$|^src/lib/[^/]+/(provider|connector)\\.ts$|^src/lib/qualify/status\\.ts$|^src/lib/prospect/identity\\.ts$|^src/lib/icp/schema\\.ts$|^src/lib/posts/dedup\\.ts$|^src/lib/signals/source-kind-schemas\\.ts$|^src/lib/signals/connectors/linkedin-jobs\\.ts$",
+        path: "^src/lib/.*(-view|-map)\\.ts$|^src/lib/[^/]+/(provider|connector)\\.ts$|^src/lib/prospect/identity\\.ts$|^src/lib/icp/schema\\.ts$|^src/lib/posts/dedup\\.ts$|^src/lib/signals/source-kind-schemas\\.ts$|^src/lib/signals/connectors/linkedin-jobs\\.ts$",
       },
       to: {
         path: "^src/lib/db/index\\.ts$|^src/lib/jobs/index\\.ts$|^src/lib/log",

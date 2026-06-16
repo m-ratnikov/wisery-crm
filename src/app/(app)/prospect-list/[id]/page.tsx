@@ -14,11 +14,11 @@ import {
   markCommentPostedAction,
   markMessageSentAction,
   monitorAction,
-  reScoreAction,
 } from "../actions";
 
-// Person detail (prospect-list): score reasoning and the dossier (ADR-0008: enriched is a related
-// row, shown here). Enrich and re-score act on this person on demand (ADR-0019). Server Component;
+// Person detail (prospect-list): the dossier (ADR-0008: enriched is a related row, shown here)
+// and the engagement artifacts. Enrich acts on this person on demand (ADR-0019). No score or
+// qualification appears - the advisory score lives on the signal (ADR-0022). Server Component;
 // params is async in Next 16.
 export default async function ProspectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -39,9 +39,7 @@ export default async function ProspectDetailPage({ params }: { params: Promise<{
         <header className="mt-3 mb-6 flex items-start justify-between gap-4">
           <div>
             <h1 className="text-lg font-semibold tracking-tight">{detail.name}</h1>
-            <p className="mt-1 text-sm text-zinc-500">
-              {detail.status} &middot; {detail.qualification} &middot; score {detail.score ?? "-"}
-            </p>
+            <p className="mt-1 text-sm text-zinc-500">{detail.status}</p>
           </div>
           <div className="flex gap-2">
             <form action={enrichAction}>
@@ -51,15 +49,6 @@ export default async function ProspectDetailPage({ params }: { params: Promise<{
                 className="rounded-md border border-zinc-200 px-3 py-1.5 text-sm dark:border-zinc-700"
               >
                 Enrich
-              </button>
-            </form>
-            <form action={reScoreAction}>
-              <input type="hidden" name="id" value={detail.id} />
-              <button
-                type="submit"
-                className="rounded-md bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white dark:bg-zinc-100 dark:text-zinc-900"
-              >
-                Re-score
               </button>
             </form>
             <form action={fetchPostsAction}>
@@ -83,13 +72,6 @@ export default async function ProspectDetailPage({ params }: { params: Promise<{
             </form>
           </div>
         </header>
-
-        <Section title="Why this score">
-          <p className="text-sm leading-6 text-zinc-700 dark:text-zinc-300">
-            {detail.reason ?? "Not scored yet."}
-          </p>
-          {detail.summary ? <p className="mt-2 text-xs text-zinc-500">{detail.summary}</p> : null}
-        </Section>
 
         <Section title="Dossier">
           {detail.dossier !== null && detail.dossier !== undefined ? (
