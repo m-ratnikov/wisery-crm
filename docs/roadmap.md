@@ -89,13 +89,7 @@ multi-tenant plumbing (overview section 7); autonomous / automated sending (neve
 
 ## Verification posture
 
-Every capability here is verified by the **`quality-harness` gates** (`verify` = `tsc` + ESLint +
-duplication/code-smell + per-file coverage + dependency-cruiser boundaries + `next build`, enforced in
-CI). These gates run whole-tree, so they catch system-context regressions, not just per-diff issues.
-On top of the gates, two judgment cadences: **per change**, `/opsx:verify` (conformance to design +
-ADRs) plus a `code-review` pass run with architecture context; **per milestone**, a whole-system
-review over the accumulated code to catch drift no single change reveals. This is the `spec-driven`
-code schema and is **not** the multi-agent architecture verification gate
-([verification-gate.md](verification-gate.md)), which only re-fires if a change introduces a *new*
-architectural seam (for example, the email-channel container when that lands) - a
-`spec-driven-architecture` change first. `quality-harness` (change #0) is what stands these gates up.
+The full posture (gates, review cadences, the review-loop machinery, system review) lives in
+[process/engineering.md](process/engineering.md) - this roadmap only carries its sequencing
+fact: **`quality-harness` (change #0) is what stands the gates up**, which is why it lands
+before every other capability.

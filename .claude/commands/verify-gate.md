@@ -5,7 +5,7 @@ category: Architecture
 tags: [architecture, verification, review, hallucination]
 ---
 
-Run the verification gate (`docs/verification-gate.md`) on a named architecture artifact and write
+Run the verification gate (`docs/process/verification-gate.md`) on a named architecture artifact and write
 a verification record. This is the gate that the change's section-0 promotion tasks require.
 
 **Input**: an artifact path, or a change name. If omitted, default to the active change's
@@ -32,7 +32,7 @@ this gate.
    - `adr` -> canon, atlas, greybeard
    - `domain-model` -> atlas, canon, pedant
    - other -> canon
-   See `docs/review-panel.md`.
+   See `docs/process/review-panel.md`.
 
 4. **Stage 3 - Synthesize.** Dispatch `chair` with the ledger plus the panel findings. Capture its
    single verdict (`ship` / `ship-with-fixes` / `rework`) and headline.

@@ -169,7 +169,7 @@ artifacts:
       Validate the diagrams before completing this step: run the project's Mermaid
       parser check (`npx vitest run tests/mermaid.test.ts`, which runs `mermaid.parse`
       over every block in the change folder) and fix any that do not parse - a block
-      that fails the parser will not render and blocks the gate (docs/verification-gate.md,
+      that fails the parser will not render and blocks the gate (docs/process/verification-gate.md,
       Mechanical checks). Common trap: a `;` inside a sequence-message or state-transition
       label terminates the statement - use a comma instead.
     requires:
@@ -232,7 +232,7 @@ artifacts:
       <source> -->`, `<!-- v:derives <ADR-N / D-N / section> -->`, or `<!-- v:decision -->` /
       `<!-- v:assumption -->` (a novel claim must be a falsifiable invariant, else omit it).
       Anchors render invisibly and are stripped to a clean view at promotion; an un-anchored
-      claim is treated as unsupported at the verification gate (docs/verification-gate.md).
+      claim is treated as unsupported at the verification gate (docs/process/verification-gate.md).
 
 
       Conventions: Mermaid for all diagrams. No em-dashes (use " - ").
@@ -241,7 +241,7 @@ artifacts:
       Validate the diagrams before completing this step: run the project's Mermaid
       parser check (`npx vitest run tests/mermaid.test.ts`, which runs `mermaid.parse`
       over every block in the change folder) and fix any that do not parse - a block
-      that fails the parser will not render and blocks the gate (docs/verification-gate.md,
+      that fails the parser will not render and blocks the gate (docs/process/verification-gate.md,
       Mechanical checks). Common trap: a `;` inside a sequence-message or state-transition
       label terminates the statement - use a comma instead.
     requires:
@@ -283,7 +283,7 @@ artifacts:
       Validate the diagrams before completing this step: run the project's Mermaid
       parser check (`npx vitest run tests/mermaid.test.ts`, which runs `mermaid.parse`
       over every block in the change folder) and fix any that do not parse - a block
-      that fails the parser will not render and blocks the gate (docs/verification-gate.md,
+      that fails the parser will not render and blocks the gate (docs/process/verification-gate.md,
       Mechanical checks). Common trap: a `;` inside a sequence-message or state-transition
       label terminates the statement - use a comma instead.
     requires:
@@ -354,7 +354,7 @@ artifacts:
       Claim grounding: anchor every non-trivial claim in Context / Decision / Consequences with
       an HTML comment - `<!-- v:fact <source> -->`, `<!-- v:derives <ADR-N / D-N / section> -->`,
       or `<!-- v:decision -->` / `<!-- v:assumption -->` (a novel claim stated as a falsifiable
-      invariant). The verification gate (docs/verification-gate.md) treats un-anchored assertions
+      invariant). The verification gate (docs/process/verification-gate.md) treats un-anchored assertions
       as unsupported and blocks promotion on them.
     requires:
       - system-design
@@ -384,11 +384,11 @@ artifacts:
       verification-gate task here: /verify-gate has passed for each view and ADR being
       promoted (groundedness ledger clean, Chair verdict not rework, the record's
       git hash-object matches current content, and human sign-off recorded for ADRs),
-      per docs/verification-gate.md. Include a separate mechanical-checks task: the
+      per docs/process/verification-gate.md. Include a separate mechanical-checks task: the
       Mermaid parser check and link check pass for the change and docs (`npm test`,
       which runs tests/mermaid.test.ts via `mermaid.parse` over every diagram and
       tests/arch-links.test.ts) - a diagram that does not parse blocks promotion
-      (docs/verification-gate.md, Mechanical checks).
+      (docs/process/verification-gate.md, Mechanical checks).
 
       - **Reconcile the spine**: tasks to update the specific sections of
       docs/product-overview.md this change touches (the locked-decisions

@@ -2,55 +2,36 @@
 
 ## Purpose
 
-The optional, paid deepening step: enrich a qualified prospect into a single dossier of research through a provider-neutral port (Apify default, fake for tests), then regenerate the first-touch draft grounded in it. Enrichment is **user-triggered by default** (single or batch) with an **opt-in auto-enrich setting** that enriches on qualification - never an automatic spend (ADR-0007). "Enriched" is derived from the one-per-prospect dossier relation, not a status (ADR-0008).
+The optional, paid deepening step: enrich a person into a single dossier of research through a provider-neutral port (Apify default, fake for tests). Enrichment is an **on-demand action** on the person (single or batch), with an **opt-in auto-enrich setting** reserved for a future auto-enrich-on-approval - never an automatic spend (ADR-0007, ADR-0019). Any admitted person is enrichable; there is no qualification or score gate - the human's triage approval is the gate (ADR-0022). "Enriched" is derived from the one-per-person dossier relation, not a status.
 
 ## Architecture
 
-- Decisions: [ADR-0007](../../../docs/adr/0007-user-triggered-optional-enrichment.md) (optional/user-triggered/opt-in-auto), [ADR-0002](../../../docs/adr/0002-headless-browser-scraping.md) (Apify default behind the port, self-host interchangeable), [ADR-0008](../../../docs/adr/0008-prospect-status-is-disposition.md) (enriched derived from the DOSSIER relation), D4 (port/adapter), D5 (draft from the dossier), D10 (PII minimization at the qualify boundary - deferred). Pipeline: [product-overview.md](../../../docs/product-overview.md) section 4.
-- Data model: `DOSSIER` (one per prospect) in [domain-model.md](../../../docs/architecture/domain-model.md); the auto-enrich flag is config-as-data in a single-row settings table.
-- Reuses `src/lib/db`, `src/lib/jobs`, the draft pipeline (the forced dossier-grounded re-draft, wired at the composition root so enrichment never imports drafting), and the shared `loadActionableProspect` (`src/lib/prospect`). The Apify network call is the coverage-excluded seam (needs `APIFY_API_TOKEN`). Triggered from the prospect-list/detail UI; see the [prototype registry](../../../src/app/prototype/README.md).
+- Decisions: [ADR-0007](../../../docs/adr/0007-user-triggered-optional-enrichment.md) (optional/user-triggered/opt-in-auto), [ADR-0002](../../../docs/adr/0002-headless-browser-scraping.md) (Apify default behind the port, self-host interchangeable), [ADR-0019](../../../docs/adr/0019-generation-and-scoring-on-demand.md) (on-demand actions; the drafting stage retired), [ADR-0022](../../../docs/adr/0022-signal-advisory-is-the-only-score.md) (no person score, no enrichment score-gate), D4 (port/adapter), D10 (PII minimization at the qualify boundary - deferred). Pipeline: [product-overview.md](../../../docs/product-overview.md) section 4.
+- Data model: `DOSSIER` (one per person) in [domain-model.md](../../../docs/architecture/domain-model.md); the auto-enrich flag is config-as-data in a single-row settings table.
+- Reuses `src/lib/db`, `src/lib/jobs`, and the shared prospect load (`src/lib/prospect`). The post-dossier handoff seam (`enqueueNext`) is currently unwired - the re-draft it once fed was retired with the drafting stage (ADR-0019). The Apify network call is the coverage-excluded seam (needs `APIFY_API_TOKEN`). Triggered from the prospect-list/detail UI; see the [prototype registry](../../../src/app/prototype/README.md).
 
 ## Requirements
-### Requirement: A qualified prospect can be deep-enriched into a dossier
+### Requirement: A person can be deep-enriched into a dossier on demand
 
-The system SHALL deep-enrich a qualified prospect into a single dossier of research, through a provider-neutral enrichment port so the provider (a managed service or self-host) is an interchangeable adapter. Each prospect SHALL have at most one dossier; re-enriching a prospect updates that dossier rather than creating a second. Enrichment SHALL be applied only to a prospect past the score bar, never to a below-bar one.
+The system SHALL deep-enrich a person into a single dossier of research, through a provider-neutral enrichment port so the provider (a managed service or self-host) is an interchangeable adapter. Each person SHALL have at most one dossier; re-enriching a person updates that dossier rather than creating a second. Any admitted person SHALL be enrichable - there is no qualification or score gate, since the human's triage approval already admitted them (ADR-0022).
 
-#### Scenario: Enriching a prospect produces one dossier
+#### Scenario: Enriching a person produces one dossier
 
-- **WHEN** a qualified prospect is enriched
+- **WHEN** a person is enriched
 - **THEN** a dossier is recorded for it with the enrichment data and the provider that produced it
-- **AND** the prospect has exactly one dossier even if enrichment runs again
+- **AND** the person has exactly one dossier even if enrichment runs again
 
-#### Scenario: A below-bar prospect is not enriched
+### Requirement: Enrichment is an on-demand action, with an opt-in auto setting
 
-- **WHEN** enrichment is requested for a below-bar prospect
-- **THEN** no dossier is produced
+The system SHALL make enrichment a user-triggered action - invoked for a single person or a batch of selected people - and SHALL NOT enrich automatically. An auto-enrich setting persists but currently routes nothing; it is reserved for a future auto-enrich-on-approval (ADR-0019). Turning the setting on or off SHALL NOT affect already-enriched people.
 
-### Requirement: Enrichment is user-triggered and optional, with opt-in automatic execution
+#### Scenario: On-demand enrichment of selected people
 
-The system SHALL make enrichment user-triggered by default - invoked for a single prospect or a batch of selected prospects - and SHALL NOT enrich automatically unless an explicit auto-enrich setting is enabled. When auto-enrich is on, a newly qualified prospect SHALL be enriched; when off, a newly qualified prospect SHALL be drafted from its signal without enrichment. Turning auto-enrich off SHALL stop new automatic enrichment without affecting already-enriched prospects.
+- **WHEN** a user triggers enrichment for one person or a selected batch
+- **THEN** each of those people is enriched
 
-#### Scenario: Manual enrichment of selected prospects
+#### Scenario: The auto-enrich setting routes nothing today
 
-- **WHEN** a user triggers enrichment for one prospect or a selected batch
-- **THEN** each of those prospects is enriched
-
-#### Scenario: Auto-enrich routes qualification to enrichment
-
-- **WHEN** auto-enrich is on and a prospect becomes qualified
-- **THEN** the prospect is enriched (rather than drafted directly from the signal)
-
-#### Scenario: Auto-enrich off keeps the default path
-
-- **WHEN** auto-enrich is off and a prospect becomes qualified
-- **THEN** the prospect is drafted from its signal, with no enrichment
-
-### Requirement: Enrichment grounds a re-draft in the dossier
-
-The system SHALL regenerate the first-touch draft from the dossier once a prospect is enriched, so the message reflects the deeper research rather than only the thin signal. The dossier-grounded draft SHALL become the selected draft, superseding a prior signal-only draft if one exists.
-
-#### Scenario: A re-draft is grounded in the dossier
-
-- **WHEN** a prospect is enriched
-- **THEN** a new draft is generated using the dossier and becomes the selected draft
+- **WHEN** auto-enrich is on and a person is created (by approval or by hand)
+- **THEN** no enrichment is enqueued automatically - enrichment is requested only by the explicit single or batch action
 

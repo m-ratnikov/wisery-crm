@@ -86,6 +86,15 @@ the locked ADRs and the domain model** (architecture conformance / drift: the im
 Current Architecture compared against the Planned Architecture in canon). The spec stays the
 source of truth; code is forced to conform to it, not the reverse.
 
+**Default-lane canon reconciliation (clears the backlog).** A default-lane (`spec-driven-with-adr`)
+change that writes an ADR does NOT re-slice the descriptive canon; instead each such ADR carries
+a one-line "Canon impact" field naming the `docs/architecture/*` / `docs/product-overview.md`
+sections it made stale. This lens reconciles the canon sections named in the "Canon impact"
+lines of every ADR accepted since the last system review: re-slice each named section to match
+the now-in-force ADRs, then the backlog is clear until the next default-lane ADR. This is what
+keeps the default lane honest - the ADR records the debt synchronously, the system review pays
+it down in batch.
+
 Each lens reads the whole tree but answers a **partition of the question, not a partition of
 the files**. The chair owns the union, so any partition overlap surfaces as a contradiction
 rather than a silent gap. A lens may fan out into several read-only agents internally when its
@@ -138,10 +147,9 @@ triggers coincide at the milestone - which is exactly what happened at M1.
 ## The code-tier lineup
 
 The [review-panel.md](review-panel.md) roster is **artifact-shaped**: Pedant audits C4
-notation, Tracer checks diagram cross-levels, Rookie reads prose for clarity. Most of it has no
-lens on code. The system review reuses only the **medium-agnostic** pieces - the output
-contract and the Chair - and dispatches the three lenses above as read-only agents. Do **not**
-summon Pedant / Tracer / Rookie here: an agent invoked outside its grounding either abstains
+notation and has no lens on code. The system review reuses only the **medium-agnostic** pieces -
+the output contract and the Chair - and dispatches the three lenses above as read-only agents. Do
+**not** summon Pedant here: an agent invoked outside its grounding either abstains
 (a wasted dispatch) or manufactures a finding to look busy (the failure `review-panel.md`
 forbids). Atlas (boundaries) and a code-oriented Canon (ADR conformance over code, not diagrams)
 do carry over, because their lenses are not tied to the diagram medium.

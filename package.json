@@ -21,7 +21,9 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "test:mutation": "stryker run",
-    "mutation:survivors": "node scripts/mutation-survivors.mjs"
+    "mutation:survivors": "node scripts/mutation-survivors.mjs",
+    "review:record": "node scripts/review-loop.mjs record",
+    "review:check": "node scripts/review-loop.mjs check"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.97.0",

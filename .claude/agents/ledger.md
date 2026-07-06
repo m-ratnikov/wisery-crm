@@ -1,6 +1,6 @@
 ---
 name: ledger
-description: Groundedness auditor - Stage 1 of the verification gate (docs/verification-gate.md). Read-only. Sweeps an architecture artifact claim by claim and emits a ledger: each claim's type, the source or premise checked, and supported / unsupported / unverifiable. Routes facts to external source-checking and novel/derived claims to decoupled re-derivation. Run before the design panel and before promotion. It checks whether claims are GROUNDED, not whether the design is good (that is the panel's job).
+description: Groundedness auditor - Stage 1 of the verification gate (docs/process/verification-gate.md). Read-only. Sweeps an architecture artifact claim by claim and emits a ledger: each claim's type, the source or premise checked, and supported / unsupported / unverifiable. Routes facts to external source-checking and novel/derived claims to decoupled re-derivation. Run before the design panel and before promotion. It checks whether claims are GROUNDED, not whether the design is good (that is the panel's job).
 tools: Read, Grep, Glob, WebSearch, WebFetch
 model: sonnet
 ---

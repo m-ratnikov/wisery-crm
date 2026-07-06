@@ -157,7 +157,7 @@ The clickable wireframe prototype lives at `/prototype` (mock data, no DB needed
 7. `next build` - the app builds
 
 `verify` needs a reachable test Postgres (the DB and pg-boss tests connect for real). Details
-and the testing strategy: [`docs/engineering.md`](docs/engineering.md).
+and the testing strategy: [`docs/process/engineering.md`](docs/process/engineering.md).
 
 ## Spec-driven development (OpenSpec OPSX)
 
@@ -172,10 +172,11 @@ and the specs are living artifacts that travel with the code. The tooling is Ope
 ```
 
 1. **Propose** (`/opsx:propose`) scaffolds a change under `openspec/changes/<name>/` and
-   generates its artifacts in dependency order. The default `spec-driven` schema produces:
+   generates its artifacts in dependency order. The default `spec-driven-with-adr` schema produces:
    - `proposal.md` - **why** + **what changes** + which capabilities are new vs modified
    - `specs/<capability>/spec.md` - **what** (the contract), as requirement + scenario deltas
    - `design.md` - **how** (decisions, alternatives, risks, trade-offs)
+   - `adr` - a decision record in `docs/adr/`, but only when a durable decision surfaces (the step self-skips otherwise)
    - `tasks.md` - the implementation checklist the apply phase tracks
 2. **Apply** (`/opsx:apply`) implements `tasks.md`, checking items off as it goes, under the
    verify gate.
@@ -209,10 +210,11 @@ and are injected into every artifact generation.
 
 - **Decisions** are Architecture Decision Records in [`docs/adr/`](docs/adr/), lean Nygard
   format (Context, Decision, Consequences). **Accepted ADRs are immutable** - you supersede
-  one with a new ADR, you do not edit it. ADRs are owned by the `spec-driven-architecture`
-  schema (run a change with `--schema spec-driven-architecture`): it drafts an ADR inside the
-  change and promotes it to `docs/adr/`. **An agent must not self-accept an ADR** - promotion
-  to `Status: accepted` is a human sign-off.
+  one with a new ADR, you do not edit it. The default `spec-driven-with-adr` schema writes an
+  ADR inline whenever a durable decision surfaces and promotes it to `docs/adr/`; the heavier
+  `spec-driven-architecture` schema (run with `--schema spec-driven-architecture`) also writes
+  ADRs alongside its C4 views. **An agent must not self-accept an ADR** - promotion to
+  `Status: accepted` is a human sign-off.
 - **Research** behind a decision lives separately in [`docs/explore/`](docs/explore/)
   (`YYYY-MM-DD-topic.md`). Each ADR links its explore note for provenance. ADRs record
   decisions, not research logs.

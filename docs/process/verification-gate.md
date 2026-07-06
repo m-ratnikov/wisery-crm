@@ -4,13 +4,31 @@ A repeatable gate run on `spec-driven-architecture` artifacts before they are pr
 canon. It catches two failure classes that the design panel alone missed once already: **fabricated
 or ungrounded claims** (hallucination) and **unsound design**.
 
-**Scope.** Applies to `spec-driven-architecture` artifacts only (proposal, use-cases,
-domain-model, system-design, deployment, adr). It does NOT apply to the default `spec-driven`
-(code) schema - code is verified by typecheck, tests, lint, and spec-conformance at the
-per-change tier, and by the **system review** ([system-review.md](system-review.md)) at the
-convergence / milestone tier (the code-medium mechanism this gate originally left to design
-later). Verification is matched to the artifact's medium: prose claims get grounding; code gets
-execution.
+**Scope.** Applies to `spec-driven-architecture` (architecture-lane) artifacts (proposal,
+use-cases, domain-model, system-design, deployment, adr), and to a default-lane
+(`spec-driven-with-adr`) ADR **whenever the change writes a NEW ADR** (see Proportionality). It
+does NOT gate default-lane code - code is verified by typecheck, tests, lint, and
+spec-conformance per change, and by the **system review**
+([system-review.md](system-review.md)) at the convergence / milestone tier (the code-medium
+mechanism this gate originally left to design later). Verification is matched to the artifact's
+medium: prose claims get grounding; code gets execution.
+
+## Proportionality (which change gets which gate)
+
+The gate is matched to the decision's weight, and its trigger is the artifact actually produced,
+not a tier declared up front (the lane rules live in `CLAUDE.md` "Spec workflow"; provenance:
+`docs/explore/2026-06-13-dev-process-optimization.md`,
+`docs/explore/2026-07-02-merge-tier-1-and-2.md`):
+
+- **An architecture-lane change** (`spec-driven-architecture`) and **any ADR that supersedes an
+  in-force ADR**: the full panel - Stage-1 `ledger`, then the Stage-2 lineup (atlas + greybeard +
+  pedant + canon), then `chair` synthesis, plus human sign-off.
+- **A default-lane change that wrote a NEW ADR** superseding nothing: a light check - Stage-1
+  `ledger` + a single `canon` reviewer + human sign-off. Not the full panel.
+- **A default-lane change that wrote NO new ADR**: no gate. `npm run verify` + a `code-review`
+  pass on the diff is the whole check.
+
+Human sign-off on any ADR (or anything promoting to immutable canon) stays mandatory.
 
 This is grounded in published practice, not invented here (see Sources): the extrinsic/intrinsic
 hallucination split, reference-free detection (SelfCheckGPT, Chain-of-Verification), RAGAS-style

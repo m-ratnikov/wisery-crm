@@ -5,7 +5,7 @@ category: Engineering
 tags: [review, system, seams, code, fitness-functions]
 ---
 
-Run the system review (`docs/system-review.md`) over the wired code tree and write a review
+Run the system review (`docs/process/system-review.md`) over the wired code tree and write a review
 record. This is the code-tier counterpart to `/verify-gate` (which reviews architecture
 artifacts). It catches seam bugs that live in no single diff - the class per-change `code-review`
 cannot see by construction.

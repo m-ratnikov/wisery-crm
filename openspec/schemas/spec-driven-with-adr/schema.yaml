@@ -1,6 +1,6 @@
 name: spec-driven-with-adr
 version: 1
-description: spec-driven plus a required ADR step - proposal → specs → design → adr → tasks, persisting decisions to docs/adr/
+description: the default lane - spec-driven plus an adr step that records an ADR only when a durable decision surfaces - proposal → specs → design → adr → tasks, persisting decisions to docs/adr/
 artifacts:
   - id: proposal
     generates: proposal.md
@@ -192,6 +192,12 @@ artifacts:
     description: Architecture Decision Records distilled from design for future reference
     template: adr.md
     instruction: >
+      Default lane: this step runs on every change, including trivial ones. Most
+      changes do NOT warrant a new ADR - write one only when a durable architectural
+      decision genuinely surfaces (the bar is in step 2). Skipping is the normal
+      outcome, not a failure; do not manufacture an ADR to look busy.
+
+
       Distill significant decisions from design.md into Architecture Decision
       Records that live in <repo>/docs/adr/ and persist across changes. The path
       <repo>/docs/adr/ means the target repository's docs/adr/ folder (beside
@@ -231,6 +237,15 @@ artifacts:
       supersedes ADR-NNNN", populate the Supersedes field, and explain in Context
       why the prior decision is being revisited. Do NOT touch the prior ADR's
       file; leave it exactly as it was.
+
+
+      CANON IMPACT (REQUIRED) - this default-lane schema writes the ADR but does NOT
+      re-slice the descriptive canon synchronously. So each ADR MUST carry a
+      one-line "Canon impact:" field naming the docs/architecture/* and/or
+      docs/product-overview.md sections this decision makes stale, or "none" if it
+      touches no canon. This line is the backlog a later /system-review run reads to
+      batch-reconcile the canon (see docs/process/system-review.md). Do NOT edit those canon
+      docs in this change; only record the impact.
 
 
       4. If nothing meets the bar, do not invent ADRs. The step still completes as

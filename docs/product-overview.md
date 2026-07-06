@@ -79,8 +79,7 @@ must stay consistent with it.
    writes one row: generate a LinkedIn message (connection-request or DM, ADR-0021), generate a comment
    on a post, or deep-enrich into a dossier
    ([ADR-0007](adr/0007-user-triggered-optional-enrichment.md), [ADR-0019](adr/0019-generation-and-scoring-on-demand.md)).
-   A person carries no score; the signal advisory is the only score in the system
-   ([ADR-0022](adr/0022-signal-advisory-is-the-only-score.md)).
+   The person carries no score of its own (the advisory stayed on the signal at step 3).
 5. Move the person through a **configurable pipeline** by setting its status (the seeded "LinkedIn
    outreach" default is Cold .. On Hold, CRUD-able) - status is decoupled from whether any message,
    comment, or dossier exists ([ADR-0020](adr/0020-configurable-pipelines-for-person-status.md)).
@@ -115,8 +114,8 @@ it is wired.
 | D9 | LLM access is provider-agnostic behind an `LLMProvider` port: a provider-neutral structured-output contract (JSON Schema + Zod), with Anthropic as the default adapter, not a binding. | Avoid single-vendor lock-in on the highest-value path (scoring + on-demand generation); the contract is provider-neutral anyway. (ADR-0003) |
 | D10 | PII field minimization and sub-processor controls attach at the qualify boundary; earlier pipeline stages do not constrain data shape. Provisional, deferred until productization. | Single designated seam for data-processor controls when productized; avoids scattering minimization across adapters. (D1; system-design cross-cutting) |
 | D11 | Universal triage is the intake gate: every signal awaits a human approve/dismiss before any entity is created; no per-source bypass. The ICP score is advisory at triage, not an auto-gate. This runs in **one unified Queue** - the sole intake surface; the separate Review & approve queue is removed (there is no automatic drafting output to review). | Keeps the human in control of what enters the CRM as broad/noisy sources and peers (not just buyers) join the funnel; reworks the shipped auto-fan-out-then-auto-gate intake. ([ADR-0013](adr/0013-universal-triage-intake.md), refining ADR-0005's fan-out trigger; with ADR-0014..0018 for the engagement motion; the unified Queue + removed review surface per [ADR-0019](adr/0019-generation-and-scoring-on-demand.md).) |
-| D12 | Generation and enrichment are **on-demand Person actions**, not automatic pipeline stages: each is a synchronous server action writing one row per click, with LLM/Apify spend only on that click. Approval creates the entity and writes no score; manual entry runs nothing; the drafting stage, the `draft` worker, the `queued` status, the Review & approve queue, the durable `qualify-prospect` worker, and (per ADR-0022) all person scoring are retired. Enrichment has no score gate - the human's approval is the gate, so any admitted person is enrichable on demand. | Generation is a feature of the person, not a funnel position; an auto stage spent budget drafting people the user may never contact. Owner directives (2026-06-08, 2026-06-12). ([ADR-0019](adr/0019-generation-and-scoring-on-demand.md) for on-demand generation; [ADR-0022](adr/0022-signal-advisory-is-the-only-score.md) removes person scoring and the enrichment score-gate.) |
-| D13 | Person status is a **configurable pipeline**: `Person.status` is a FK into a seeded-but-CRUD-able `pipeline_status` (Breakcold-style kanban), not a fixed enum. The seeded default "LinkedIn outreach" pipeline is Cold, CR Sent, CR Accepted, FU Sent, Conversation, Discovery call, Not Interested, Ghosted, Proposal Sent, On Hold (entry = Cold). | The product is a configurable sales CRM; a fixed seven-value enum cannot express a tenant's pipeline. ([ADR-0020](adr/0020-configurable-pipelines-for-person-status.md), supersedes ADR-0008.) |
+| D12 | Generation and enrichment are **on-demand Person actions**, not automatic pipeline stages: each is a synchronous server action writing one row per click, with LLM/Apify spend only on that click. Approval creates the entity and writes no score; the automatic drafting stage and per-person scoring are retired; enrichment has no score gate - the human's approval is the gate, so any admitted person is enrichable on demand. | Generation is a feature of the person, not a funnel position; an auto stage spent budget drafting people the user may never contact. Owner directives (2026-06-08, 2026-06-12). ([ADR-0019](adr/0019-generation-and-scoring-on-demand.md) for on-demand generation and the retired components; [ADR-0022](adr/0022-signal-advisory-is-the-only-score.md) removes person scoring and the enrichment score-gate.) |
+| D13 | Person status is a **configurable pipeline**: `Person.status` is a FK into a seeded-but-CRUD-able `pipeline_status` (Breakcold-style kanban), not a fixed enum. The seeded default "LinkedIn outreach" pipeline runs Cold .. On Hold (entry = Cold); the full status list is frozen in the ADR. | The product is a configurable sales CRM; a fixed seven-value enum cannot express a tenant's pipeline. ([ADR-0020](adr/0020-configurable-pipelines-for-person-status.md), supersedes ADR-0008.) |
 | D14 | LinkedIn outreach is a **Message** entity (connection-request and DM are message types), a sibling of the post-linked Comment, generated on demand. The channel discriminator vs per-channel-table choice is deferred (NC1). | A message's rule (keyed to a person, many per person, carrying a type) differs from a comment's (keyed to a Post); merging loses that. v1 ships LinkedIn-only. ([ADR-0021](adr/0021-linkedin-message-entity.md), refines ADR-0018.) |
 
 ## 4. Pipeline architecture
@@ -146,10 +145,8 @@ it is wired.
    you post it (manual, ToS-safe) ─► TRACK outcomes (learning loop deferred, D7/ADR-0022)
 ```
 
-Under universal triage every signal lands in the one Queue; an advisory, type-keyed rubric hint helps
-the human decide, but never auto-gates (ADR-0013/0017) - and that advisory score is the only score in
-the system, kept on the signal (ADR-0022). Approval routes by kind to a Person, a Company, or a
-peer-author + Post, and writes no score; the human's verdict is the qualification. Post-intake, the
+The diagram's stages are the locked decisions above (universal triage and the advisory-only score in
+the one Queue, D11/D5; approval that writes no score, D12). Post-intake, the
 person is worked in a **workspace** where generation and enrichment are on-demand actions - each a
 synchronous click that writes one row, spend incurred only on that click
 ([ADR-0019](adr/0019-generation-and-scoring-on-demand.md)). Status is a **configurable pipeline** the

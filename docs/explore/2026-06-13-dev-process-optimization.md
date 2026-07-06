@@ -1,9 +1,9 @@
 # Explore + implementation plan: optimizing how we ship features
 
 - Date: 2026-06-13
-- Status: plan ready to execute (not yet applied)
+- Status: APPLIED 2026-06-16. Phase 1 (A + C) and Phase 2 (B) both landed, `npm run verify` green. See "Applied" note below.
 - Method: retrospective on the `remove-person-scoring` + `adr-signal-only-scoring` session, then a process design
-- Audience: a fresh session executing this plan with no prior conversation context. Read this whole note first, then `openspec/config.yaml`, `CLAUDE.md`, `docs/architecture/README.md`, and `docs/verification-gate.md` before editing.
+- Audience: a fresh session executing this plan with no prior conversation context. Read this whole note first, then `openspec/config.yaml`, `CLAUDE.md`, `docs/architecture/README.md`, and `docs/process/verification-gate.md` before editing.
 
 ## Why (the problem)
 
@@ -28,8 +28,8 @@ Two root causes:
   - `system-design.md`: Containers, Key runtime flows, Components (C4 L3)
   - `domain-model.md`: Entity model, Lifecycle, Domain events
   - `README.md`: Layout, Rules, Canon integrity
-- **Reconciliation tool that already exists:** `docs/system-review.md` (the `/system-review` skill) - a whole-system code review at milestone/convergence. This is the natural place to batch-reconcile canon drift.
-- **verify-gate** (`docs/verification-gate.md`): already classifies high- vs low-stakes; human sign-off mandatory for ADRs/immutable-canon. Panel lineups are per-artifact.
+- **Reconciliation tool that already exists:** `docs/process/system-review.md` (the `/system-review` skill) - a whole-system code review at milestone/convergence. This is the natural place to batch-reconcile canon drift.
+- **verify-gate** (`docs/process/verification-gate.md`): already classifies high- vs low-stakes; human sign-off mandatory for ADRs/immutable-canon. Panel lineups are per-artifact.
 
 ## Decisions (already settled with the owner - do not re-litigate)
 
@@ -66,8 +66,8 @@ This is a tooling/process/docs change. Per the standing convention (`MEMORY.md`:
 4. **Write the tier rule into `CLAUDE.md` "Spec workflow" section.** Replace the current two-line section with the three-tier table above (tier, schema, trigger, review) plus the concrete Tier-3 trigger sentence. Reconcile the "Capture conventions" bullet (line ~44) so it agrees: ADRs are recorded via `spec-driven-with-adr` (Tier 2) or `spec-driven-architecture` (Tier 3), both immutable, both promote to `docs/adr/`.
 5. **Add the Canon-impact guardrail (C).** Two edits:
    - In the `spec-driven-with-adr` schema's `adr` artifact instruction (in `schema.yaml`), require a one-line **"Canon impact"** field in each ADR: name the `docs/architecture/*` / `docs/product-overview.md` sections this decision makes stale (or "none"). The Tier-2 schema does NOT re-slice those docs synchronously - it only writes the ADR.
-   - In `docs/system-review.md`, add a step: a system-review run reconciles the canon docs named in the "Canon impact" lines of ADRs accepted since the last review (then clears the backlog). This is what keeps Tier 2 honest.
-6. **Make the gate proportional (part of A).** In `docs/verification-gate.md`, add a short "Proportionality" note: the full panel (atlas + greybeard + pedant + canon + chair) runs for Tier-3 artifacts and for any ADR that supersedes an in-force ADR; a Tier-2 ADR that supersedes nothing gets Stage-1 ledger + a single `canon` reviewer + human sign-off, not the full panel. (Human sign-off on any ADR stays mandatory.)
+   - In `docs/process/system-review.md`, add a step: a system-review run reconciles the canon docs named in the "Canon impact" lines of ADRs accepted since the last review (then clears the backlog). This is what keeps Tier 2 honest.
+6. **Make the gate proportional (part of A).** In `docs/process/verification-gate.md`, add a short "Proportionality" note: the full panel (atlas + greybeard + pedant + canon + chair) runs for Tier-3 artifacts and for any ADR that supersedes an in-force ADR; a Tier-2 ADR that supersedes nothing gets Stage-1 ledger + a single `canon` reviewer + human sign-off, not the full panel. (Human sign-off on any ADR stays mandatory.)
 7. **Verify Phase 1:** `openspec schemas` lists all three; `npm run verify` green (it does not test schemas, but confirms no doc/test broke); optionally `openspec new change --schema spec-driven-with-adr _smoke` then delete the folder to confirm the artifact graph loads.
 
 ### Phase 2 - De-duplicate the canon (B)
@@ -112,8 +112,24 @@ Acceptance for Phase 2: a representative concept is described once; `npm run ver
 2. Phase 2 (B) - the structural payoff; do deliberately, gate each doc on `npm run verify`. Fold in the known drafting/score staleness.
 3. Skip point 5 (automation) unless B leaves enough re-slicing to be worth scripting.
 
+## Applied (2026-06-16)
+
+Phase 1 (A + C), direct edits:
+- Re-enabled the middle schema (`spec-driven-with-adr/schema.yaml`); `openspec schemas` now lists all three.
+- Rewrote that schema's `README.md` as the Tier-2 doc; updated `openspec/config.yaml`'s top comment to the three-tier model and relaxed the `design` rule to allow a superseding ADR via Tier 2 or Tier 3.
+- Wrote the three-tier table + Tier-3 trigger into `CLAUDE.md` "Spec workflow"; reconciled the "Capture conventions" ADR bullet.
+- Canon-impact guardrail (C): the schema's `adr` instruction now requires a "Canon impact" field; `docs/process/system-review.md` lens C gained the Tier-2 canon-reconciliation step that clears that backlog.
+- Proportionality note added to `docs/process/verification-gate.md` (full panel for Tier 3 / superseding ADRs; light check for a Tier-2 ADR that supersedes nothing).
+
+Phase 2 (B), de-dup + stale-debt cleanup (gated on `npm run verify`):
+- Deleted the retired `drafting` capability spec (no code remains; parallels the `qualification` retirement).
+- Reconciled `enrichment`, `prospect-list`, and `person-model` specs to the shipped ADR-0019/0022 reality (no qualification/score gate, no re-draft, auto-enrich routes nothing).
+- Trimmed the worst duplicated enumerations in `product-overview.md`'s Locked-decisions table (D12 retired-component list, D13 full seeded-pipeline list) to a statement + ADR link.
+- Conservative cross-doc dedup pass (2026-06-16, second pass): established that the area docs already own their facet (domain-model = lifecycle, system-design = flows, glossary = definitions, cross-cutting = PII/learning-loop) - those score statements are authoritative, not duplication. The duplicator was the spine. Cut the clearest spine restatements: journey step 4's repeat of the step-3 score fact, the post-diagram paragraph's re-narration of the diagram + locked decisions, and system-context's re-definition of the advisory score (now defers to glossary). Score-fact mentions in `product-overview.md` dropped 13 -> 8; `system-context.md` 1 -> 0.
+- Deliberately left intact (conservative): the Locked-decisions rationale, the "qualifier (port vs upgrade)" section, MVP scope, and the Open-questions resolution log - each is the spine's own job (decision record / tracking), not duplication. An aggressive pass would push these to one-line + link; not done.
+
 ## Sources
 
 - This session's `remove-person-scoring` + `adr-signal-only-scoring` execution and `verify-gate` run.
 - `docs/explore/2026-05-21-architecture-folder-organization.md` (the canon layout + the original parking of `spec-driven-with-adr`).
-- `openspec/config.yaml`, `CLAUDE.md`, `docs/architecture/README.md`, `docs/architecture/canon.manifest.json`, `docs/verification-gate.md`, `docs/system-review.md`, `openspec/schemas/spec-driven-with-adr/`.
+- `openspec/config.yaml`, `CLAUDE.md`, `docs/architecture/README.md`, `docs/architecture/canon.manifest.json`, `docs/process/verification-gate.md`, `docs/process/system-review.md`, `openspec/schemas/spec-driven-with-adr/`.

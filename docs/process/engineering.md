@@ -1,7 +1,7 @@
 # Engineering - quality harness
 
-How code quality is enforced in this repo. Stood up by the `quality-harness` change;
-the sequencing context is in [roadmap.md](roadmap.md) (verification posture).
+How code quality is enforced in this repo - the full verification posture. Stood up by
+the `quality-harness` change; the build order is in [roadmap.md](../roadmap.md).
 
 ## The verify gate
 
@@ -103,7 +103,7 @@ to make genuine copy-paste **visible** - it does not mandate extraction. When it
 rule of three: a third occurrence warrants a shared abstraction; a second is left in place.
 
 The one standing ignore is `**/prototype/**`: the clickable UI wireframes under `src/app/prototype/`
-(see its [README](../src/app/prototype/README.md)) repeat card/row markup by nature and are
+(see its [README](../../src/app/prototype/README.md)) repeat card/row markup by nature and are
 exploratory, not production code. They stay typechecked, linted, and built, but are excluded from
 duplication (and, via the `src/app/**` rule above, from the coverage floor).
 
@@ -118,12 +118,52 @@ architecture docs in context** (not the diff alone, which is inherently local). 
 - **Rule of three:** is a shared abstraction being introduced at only the second occurrence? Prefer to wait for the third.
 - **SOLID (judgment parts):** does each module have one reason to change (SRP)? Naming, and the right seam.
 
+### The review-loop gate (deterministic loop control)
+
+The review loop's exit ("archive only once a pass finds nothing material") used to be a
+prose instruction the agent was trusted to follow - and LLM-judged exits fail toward a
+premature "done" (provenance and sources:
+[explore note](../explore/2026-07-02-review-loop-determinism.md)). The exit is now mechanical:
+
+- **Record every round.** After each review pass, run
+  `npm run review:record -- <change> --verdict clean|findings`. This appends a round
+  (verdict + a content hash of the code tree) to
+  `openspec/changes/<change>/review-state.json` - the loop ledger. At 5 consecutive
+  findings rounds without a clean pass, `record` exits non-zero with an ESCALATE
+  message: the round is still recorded, but the loop must stop and hand the punch list
+  to the human - a loop that long signals a design-level problem, not a fix-round
+  problem. (A hard iteration kill, Ralph-style, is not possible at this enforcement
+  point: the loop runs inside an interactive session, not under an outer harness.)
+- **The gate.** A Claude Code `PreToolUse` hook (`.claude/settings.json`, running
+  `scripts/review-loop.mjs gate`) blocks `openspec archive <change>` unless the last
+  recorded round is `clean` AND its tree hash matches the current code tree. Any code
+  edit after a clean round - a review fix included - changes the hash and re-blocks
+  archive, so "re-review the fix delta" is mechanically required, not requested.
+  `npm run review:check -- <change>` runs the same check by hand.
+- **Hash semantics.** Content-addressed over tracked + untracked file contents, so a
+  commit does not invalidate a review but any edit does. `docs/`, `openspec/`, and
+  `.claude/` are excluded: a code review's subject is code, and recording the round
+  itself must not invalidate the round.
+- **The motor.** A `Stop` hook (`scripts/review-loop.mjs stop`) blocks the agent from
+  ending its turn while any change's loop is mid-flight (last recorded round =
+  `findings`) and feeds back the continuation instruction - the next round is
+  machine-triggered, not human-triggered. Three deterministic releases so a session is
+  never held hostage: a clean round, the escalation cap (5 consecutive findings rounds
+  hand the punch list to the human), and a staleness window (a loop untouched for 8
+  hours is abandoned to the human).
+
+Together: the motor spins the iterations, the gate locks the exit; `verify` stays with
+CI (the existing automatic backstop). The system-review loop remains convention - it has no closure
+event equivalent to archive to hook, and its records already capture dispositions.
+
 ## How the checks are triggered
 
-Only **CI is automatic**; everything else is convention the coding agent follows from the
-definition of done. `/opsx:apply` implements tasks and ticks checkboxes - it runs no gate.
-There are no local git hooks: nothing blocks a local commit or push, so CI (`ci.yml`,
-on every push and PR) is the hard backstop that re-runs `verify` whole-tree.
+Two things are automatic: **CI** and the **review-loop gate** (above); everything else is
+convention the coding agent follows from the definition of done. `/opsx:apply` implements
+tasks and ticks checkboxes - it runs no gate. There are no local git hooks: nothing blocks
+a local commit or push, so CI (`ci.yml`, on every push and PR) is the hard backstop that
+re-runs `verify` whole-tree, while the review-loop gate blocks archive inside the agent
+session.
 
 ```mermaid
 flowchart TD
@@ -135,14 +175,15 @@ flowchart TD
         A["/opsx:apply (agent writes code)<br/>implements tasks, ticks checkboxes - runs NO gate"]
         VF["npm run verify:fast<br/>tsc - eslint - tests - run often"]
         V["npm run verify<br/>full gate - before every push (DB env vars set!)"]
-        CR["code-review pass + /opsx:verify<br/>judgment checks tools cannot do"]
+        CR["code-review pass (+ /opsx:verify when a design/ADR exists to conform to)<br/>judgment checks tools cannot do"]
         AR["/opsx:archive<br/>openspec validate (spec structure)"]
     end
 
     M["npm run test:mutation<br/>Stryker regression sensor - per milestone"]
     SR["system review (read-only lenses)<br/>seams - invariants - conformance - per convergence + milestone"]
+    RG["review-loop gate - PreToolUse hook<br/>blocks openspec archive unless the last recorded round is clean AND matches the current code tree"]
 
-    subgraph CI["2 - CI: the ONLY automatic step"]
+    subgraph CI["2 - CI: the automatic backstop"]
         direction TB
         P["git push / pull_request"]
         CIV["npm run verify<br/>whole-tree, real Postgres"]
@@ -154,8 +195,10 @@ flowchart TD
     DEV ==>|drives| A
     A --> VF --> V
     V -->|green| CR
-    CR -->|findings: fix, then re-verify and re-review the fix delta in context| V
-    CR -->|no material findings| AR
+    CR -->|findings: record round, fix, then re-verify and re-review the fix delta in context| V
+    CR -->|clean pass: npm run review:record| RG
+    RG -->|round clean + tree unchanged| AR
+    RG -->|blocked: unreviewed delta or no clean round| CR
     DEV -.->|per milestone| M
     DEV -.->|per convergence + milestone| SR
     AR ==>|you push| P
@@ -167,21 +210,22 @@ flowchart TD
     classDef manual fill:#fef9c3,stroke:#ca8a04,color:#000;
     classDef conv fill:#e0e7ff,stroke:#4f46e5,color:#000;
     classDef human fill:#fee2e2,stroke:#dc2626,color:#000;
-    class P,CIV,DONE auto;
+    class P,CIV,DONE,RG auto;
     class VF,V,M,SR manual;
     class A,CR,AR,G conv;
     class DEV human;
 ```
 
 Legend: red = you, the human developer (you trigger everything that is not green);
-green = automatic (CI, the backstop); yellow = the mechanical gate you run by hand;
-blue = agent-driven convention, enforced by the definition of done, not by a hook.
-The only automatic enforcement is CI - if it goes red, the loop bounces straight back
-to you.
+green = automatic (CI and the review-loop gate); yellow = the mechanical gate you run
+by hand; blue = agent-driven convention, enforced by the definition of done, not by a
+hook. Automatic enforcement is CI (red bounces the loop straight back to you) plus the
+review-loop gate (archive stays blocked until the recorded review loop has actually
+converged).
 
 ## Enforcement cadence
 
-- **Per change:** `verify` green + a `code-review` pass with architecture context + `/opsx:verify` (conformance to the change's design and the accepted ADRs) before archive. **The review loops, it is not one-shot:** when a review pass produces fixes, those fixes are new, unreviewed logic written into exactly the spots the reviewer flagged, and `verify` cannot judge their semantics (it catches mechanical issues, not "the test asserts the wrong thing" or "this breaks an ADR"). So after applying fixes, **re-run `verify` AND re-run the `code-review` over the fix delta with full context** - the changed lines are the entry point, but read the surrounding code, callers, and the invariants the change touches (a fix can be locally correct yet wrong in context). Converge on a **materiality bar** - archive once a pass yields no correctness / conformance / security finding - not on zero cosmetic nits, and never by narrowing what the reviewer may look at.
+- **Per change:** `verify` green + a `code-review` pass with architecture context before archive. **`/opsx:verify`** (conformance to the change's design and the accepted ADRs) is **required in the architecture lane, and in the default lane whenever the change wrote a new ADR or carries a non-trivial design** to conform to; for a purely mechanical default-lane change (rename, dead-code removal, copy fix, a tweak with no design surface to conform to) it is **optional** - skip it when there is no design claim or ADR for it to check, since `verify` plus the diff review already cover such changes. **When a default-lane change writes a NEW ADR, run the light ADR gate on it before archive** (Stage-1 `ledger` + one `canon` reviewer + human sign-off; the full `/verify-gate` panel if it supersedes an in-force ADR) - see [verification-gate.md](verification-gate.md). **The review loops, it is not one-shot:** when a review pass produces fixes, those fixes are new, unreviewed logic written into exactly the spots the reviewer flagged, and `verify` cannot judge their semantics (it catches mechanical issues, not "the test asserts the wrong thing" or "this breaks an ADR"). So after applying fixes, **re-run `verify` AND re-run the `code-review` over the fix delta with full context** - the changed lines are the entry point, but read the surrounding code, callers, and the invariants the change touches (a fix can be locally correct yet wrong in context). Converge on a **materiality bar** - archive once a pass yields no correctness / conformance / security finding - not on zero cosmetic nits, and never by narrowing what the reviewer may look at. **Record every round** (`npm run review:record -- <change> --verdict clean|findings`): the review-loop gate (above) blocks archive until the last recorded round is clean and matches the current code tree, so the loop's exit is checked by a script, not self-judged.
 - **At archive:** archive with the CLI - `openspec archive <name> --yes` - which merges the change's delta specs into `openspec/specs/` and **validates them by default**. This is where canonical-spec structure is enforced; `verify`/CI stay purely code (do not run `openspec validate` in CI - spec validation belongs at the spec lifecycle boundary, not the code build). The `/opsx:archive` skill is patched to use this CLI (Fission-AI/OpenSpec #863, #913).
 - **At convergence and per milestone:** a **system review** over what spans changes - the
   composition root, the entity state machines, cross-capability invariants, code-vs-canon

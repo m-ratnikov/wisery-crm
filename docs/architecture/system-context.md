@@ -84,10 +84,10 @@ sequenceDiagram
 ```
 
 The advisory-score step is resolved at L2: the advisory filter scores each signal against the rubric
-matching its kind and records the result on the signal (`signal_advisory`) - the only score in the
-system, a triage hint, never a per-person score (ADR-0022). Approval creates the entity and writes no
-score; generation is a separate on-demand LLM call grounded in the person's info and dossier. The
-container-level flows are in [system-design.md](system-design.md).
+matching its kind and records the result on the signal (`signal_advisory` - the advisory score defined
+in [glossary.md](glossary.md); ADR-0022). Approval creates the entity and writes no score; generation
+is a separate on-demand LLM call grounded in the person's info and dossier. The container-level flows
+are in [system-design.md](system-design.md).
 
 ## Scope notes
 

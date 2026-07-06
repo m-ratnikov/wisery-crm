@@ -1,11 +1,15 @@
-# Project-default workflow schema: the built-in spec-driven (proposal -> specs ->
-# design -> tasks). ADRs are owned by the spec-driven-architecture schema (run via
-# --schema): it drafts them in the change and promotes them to docs/adr/. A durable
-# decision that surfaces during feature work gets routed through a
-# spec-driven-architecture change, not a hand-forked adr step here. The parked
-# spec-driven-with-adr/ schema folder is no longer the default; it stays selectable
-# only if explicitly passed via --schema.
-schema: spec-driven
+# Two-lane workflow model (see CLAUDE.md "Spec workflow" for triggers + review):
+#   Default lane      -> spec-driven-with-adr (this default): proposal -> specs -> design -> adr -> tasks.
+#                        Covers everything that is not an architecture change (bugfix, rename, tweak,
+#                        OR a durable decision that fits an ADR + code). The adr step self-skips when no
+#                        durable decision surfaces and records one when it does. Verified by
+#                        npm run verify + code-review; if a NEW ADR was written, a light gate on that ADR
+#                        (ledger + one canon reviewer + human sign-off) before archive.
+#   Architecture lane -> spec-driven-architecture (via --schema): full C4 views + ADR + canon
+#                        promotion, gated by /verify-gate. For contested/complex work: reshapes data,
+#                        supersedes a load-bearing ADR, or introduces a boundary future changes live with.
+# Default is spec-driven-with-adr; the architecture schema is opt-in via --schema.
+schema: spec-driven-with-adr
 
 # context is injected into every artifact generation; rules are injected per
 # artifact (specs/design/tasks). Keep this the artifact-writing-relevant subset
@@ -35,7 +39,7 @@ rules:
     - Every requirement needs at least one scenario; scenarios use exactly four hashtags.
     - A capability's canonical spec (openspec/specs/<capability>/spec.md) MAY carry an `## Architecture` section after Purpose linking - never duplicating - its architectural home, namely the relevant docs/architecture/ docs or the docs/product-overview.md spine, plus the docs/adr/ entries that govern it. The section is optional (the architecture schema is opt-in; omit it when there is nothing to point at), but any links it has must resolve and stay current - maintain them on the canonical spec, since a delta does not carry the section through archive. When the capability is surfaced in the UI, this section SHOULD also link the wireframe screen(s) under src/app/prototype/ that surface it - a screen often surfaces several capabilities, so link the screen rather than duplicating it (the prototype registry README is the join table).
   design:
-    - Honor accepted ADRs in docs/adr/ (they are immutable); to diverge, say so explicitly in Decisions and record a superseding ADR via a spec-driven-architecture change (this schema has no adr step).
+    - Honor accepted ADRs in docs/adr/ (they are immutable); to diverge, say so explicitly in Decisions and record a superseding ADR. The default schema includes an adr step, so a durable decision that surfaces here is recorded inline via that step; escalate to spec-driven-architecture only when the decision needs C4 views, reshapes persisted data, or supersedes a load-bearing ADR.
     - Server Components by default; 'use client' needs a stated reason. Use server-only for modules that must never reach the client bundle.
     - Anthropic Structured Outputs over tool_use for any LLM call returning data; prompts live in src/prompts/<name>_v<n>.ts.
     - Reuse before build. State which existing modules/seams the change reuses (config via src/lib/config, data via src/lib/db, background work via the src/lib/jobs facade, LLM via the LLMProvider port) rather than introducing a parallel mechanism. For a new adapter, name the port/seam it plugs into; do not invent one.

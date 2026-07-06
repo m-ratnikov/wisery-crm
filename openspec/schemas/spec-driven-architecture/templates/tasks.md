@@ -4,7 +4,7 @@
 - [ ] 0.1 <!-- e.g., every domain event maps to a lifecycle transition -->
 - [ ] 0.2 <!-- e.g., every use case traces to at least one entity -->
 - [ ] 0.3 <!-- e.g., every container appears in deployment (when deployment is in scope) -->
-- [ ] 0.4 <!-- verification gate: /verify-gate passed for each promoted view + ADR - ledger has no unsupported claims, Chair verdict not rework, record git hash-object matches current content, (ADRs) human sign-off recorded. See docs/verification-gate.md. -->
+- [ ] 0.4 <!-- verification gate: /verify-gate passed for each promoted view + ADR - ledger has no unsupported claims, Chair verdict not rework, record git hash-object matches current content, (ADRs) human sign-off recorded. See docs/process/verification-gate.md. -->
 
 ## 1. Reconcile the spine
 

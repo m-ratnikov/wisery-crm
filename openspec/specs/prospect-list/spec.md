@@ -2,12 +2,12 @@
 
 ## Purpose
 
-Anchor view #3: the browse/manage grid over every prospect across the pipeline - status, latest score, source, and the derived enriched/drafted facets (a dossier / a selected draft exists, ADR-0008) - with filtering and a detail view (score reasoning, the selected draft, the dossier). It is the home of the enrich trigger (single + batch) and the auto-enrich toggle (ADR-0007), and of the regenerate-draft action; all are thin Server Actions over the built enrichment/drafting/settings entry points. Read-model + UI, no new schema.
+Anchor view #3: the browse/manage grid over every person across the pipeline - pipeline status, source, and the derived enriched facet (a dossier exists) - with filtering and a detail view (the dossier). No per-person score or qualification verdict is shown; the advisory score lives on the originating signal in the triage lane (ADR-0022). It is the home of the enrich trigger (single + batch) and the auto-enrich toggle (ADR-0007); both are thin Server Actions over the built enrichment/settings entry points. Read-model + UI, no new schema.
 
 ## Architecture
 
-- Decisions: the minimal-interface thesis (anchor view #3), [ADR-0008](../../../docs/adr/0008-prospect-status-is-disposition.md) (enriched/drafted derived from the DOSSIER/DRAFT relations, not statuses), [ADR-0007](../../../docs/adr/0007-user-triggered-optional-enrichment.md) (enrich trigger + auto-enrich), D1 (auth deferred). Journey: working from the prospect list, [product-overview.md](../../../docs/product-overview.md).
-- Reads `prospects` / `scorings` / `drafts` / `dossiers` / `signals` / `sources` via the `src/lib/prospect` read-model (`listProspects` / `getProspectDetail`); acts through `src/lib/enrich` (`enqueueEnrich`/`enqueueEnrichForProspects`, `setAutoEnrich`) and `src/lib/draft` (`enqueueDraft` forced re-draft).
+- Decisions: the minimal-interface thesis (anchor view #3), [ADR-0020](../../../docs/adr/0020-configurable-pipelines-for-person-status.md) (pipeline status), [ADR-0022](../../../docs/adr/0022-signal-advisory-is-the-only-score.md) (no per-person score; enriched derived from the DOSSIER relation), [ADR-0007](../../../docs/adr/0007-user-triggered-optional-enrichment.md) (enrich trigger + auto-enrich), [ADR-0019](../../../docs/adr/0019-generation-and-scoring-on-demand.md) (drafting retired), D1 (auth deferred). Journey: working from the prospect list, [product-overview.md](../../../docs/product-overview.md).
+- Reads `person` / `dossiers` / `signals` / `sources` via the `src/lib/prospect` read-model (`listProspects` / `getProspectDetail`); acts through `src/lib/enrich` (`enqueueEnrich`/`enqueueEnrichForProspects`, `setAutoEnrich`).
 - Surfaced at the wired route `src/app/prospect-list/` (grid + `[id]` detail + Server Actions); the prototype screen is the design reference - see the [prototype registry](../../../src/app/prototype/README.md).
 ## Requirements
 ### Requirement: The prospect list shows every prospect with its pipeline state
@@ -26,19 +26,14 @@ The system SHALL present a browse/manage list of all people, each with its ident
 - **THEN** its identity, pipeline status, and dossier (if any) are shown
 - **AND** no score, score reasoning, or qualification verdict appears
 
-### Requirement: The user triggers enrichment and re-drafting from the list
+### Requirement: The user triggers enrichment from the list
 
-The system SHALL let a user trigger enrichment for a single prospect or for a multi-selected batch, and regenerate a prospect's draft, from the prospect list. These SHALL invoke the existing enrichment and drafting work; the list SHALL reflect the results once they complete.
+The system SHALL let a user trigger enrichment for a single person or for a multi-selected batch from the prospect list. This SHALL invoke the existing enrichment work; the list SHALL reflect the results once they complete.
 
 #### Scenario: Enriching a selected batch
 
-- **WHEN** a user selects several prospects and triggers enrichment
-- **THEN** enrichment is requested for each selected prospect
-
-#### Scenario: Regenerating a draft
-
-- **WHEN** a user regenerates a prospect's draft
-- **THEN** a new draft is generated and becomes the selected draft
+- **WHEN** a user selects several people and triggers enrichment
+- **THEN** enrichment is requested for each selected person
 
 ### Requirement: The user controls auto-enrich from the list
 

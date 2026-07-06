@@ -2,7 +2,7 @@
 
 Mode: **milestone** (whole wired tree). Reviewed state: working tree at HEAD
 `5628e52be6a6996158bb732897c1ff224ae8d359` (this session's five changes were uncommitted on top,
-so there was no clean git range for a convergence pass). Tier: code (`docs/system-review.md`), the
+so there was no clean git range for a convergence pass). Tier: code (`docs/process/system-review.md`), the
 counterpart to `/verify-gate`. Three read-only lenses (static-composition, lifecycle-reachability,
 invariant-canon) + chair synthesis.
 

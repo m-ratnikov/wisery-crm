@@ -5,19 +5,24 @@ ADRs, system-design, deployment). Each agent is one adversarial lens with a memo
 nickname you use to summon it. Invoke a single agent by nickname, pick a prebuilt lineup,
 or run the full panel.
 
+Every agent in this roster is a wired subagent under `.claude/agents/`. If a lens you want
+is not here, it is not summonable - add the agent first, do not reference a nickname that
+has no backing definition.
+
 > **Scope: this roster reviews artifacts, not code.** The code-medium counterpart is the
 > **system review** ([system-review.md](system-review.md)), which runs at convergence and
 > milestone over the wired tree. It reuses only the medium-agnostic pieces here - the output
-> contract below and the Chair - and dispatches its own three code lenses. Several agents here
-> are artifact-shaped (Pedant on C4 notation, Tracer on diagram cross-levels, Rookie on prose
-> clarity) and have no lens on code; do not summon them against a codebase. Atlas and a
-> code-oriented Canon do carry over, since their lenses are not tied to the diagram medium.
+> contract below and the Chair - and dispatches its own three code lenses. Pedant is
+> artifact-shaped (it audits C4 notation) and has no lens on code; do not summon it against a
+> codebase. Atlas and a code-oriented Canon do carry over, since their lenses are not tied to
+> the diagram medium.
 
 The roster has two halves, designed to clash:
 
-- **Conformance reviewers** check that the artifact faithfully renders and honors decisions
-  already made (ADR-0001, the stack, the locked decisions D1-D7).
-- **First-principles challengers** question whether those decisions are right in the first place.
+- **Conformance reviewers** (Canon, Pedant) check that the artifact faithfully renders and
+  honors decisions already made (ADR-0001, the stack, the locked decisions D1-D7).
+- **First-principles challengers** (Atlas, Greybeard) question whether those decisions are
+  right in the first place.
 
 When a conformance reviewer and a first-principles challenger disagree (Canon says "conform to
 ADR-0001"; Atlas says "ADR-0001 should not hold at L2"), that contradiction is the headline
@@ -26,7 +31,7 @@ finding, not noise - it means a decision is genuinely live and must be defended 
 ## How to use
 
 - "Involve Atlas and Greybeard" - dispatch just those two against the named artifact.
-- "Run the L2 sanity lineup" - dispatch a prebuilt set (see Lineups).
+- "Run the decision-review lineup" - dispatch a prebuilt set (see Lineups).
 - Any agent may return "clean in my lens." Manufacturing findings to look busy is a failure.
 
 ## Output contract (every agent obeys this)
@@ -58,7 +63,7 @@ contexts, Conway's law, and reversibility to bear, and is explicitly allowed to 
 - **Reads**: full canon - `docs/architecture/*`, `docs/adr/*`, `docs/product-overview.md`.
 - **Signature catch**: the "no-rewrite peel to worker.ts" only holds if web and worker share
   nothing but Postgres; demands that be stated as an invariant or the boundary is unproven.
-- **Subsumes**: Devil (steelmans every rejected alternative as part of its job).
+- **Also**: steelmans every rejected alternative (the devil's-advocate lens) as part of its job.
 - **Tension with**: Canon (fidelity vs first principles).
 
 ### Greybeard - Senior Technologist (technologies) `[first-principles | Opus]`
@@ -93,53 +98,6 @@ components-drawn-as-containers.
   inconsistent abstraction.
 - **Reads**: the diagram and the C4 method only.
 
-### Tracer - Cross-Level Consistency Checker `[conformance | Haiku]`
-
-Mechanical traceability across L1, L2, and the sequence diagrams.
-- **Challenges**: a sequence participant that is not a real container; an L1 external missing
-  at L2; an L2 edge with no L1 ancestor; an actor silently dropped.
-- **Reads**: all diagrams in the change plus the archived L1.
-
-### Compass - Product-Thesis Fidelity `[conformance | Sonnet]`
-
-Keeps the design pointed at true north: minimal interface + generative outputs, anchor views
-only where judgment is high, the ToS-safe human action edge, automate intelligence not action.
-- **Challenges**: any structure that undermines the thesis or the daily loop; an automated
-  outbound-to-prospect path (must stay manual).
-- **Reads**: `docs/product-overview.md`.
-
-### Breaker - Architecture Stress Challenger `[first-principles | Opus]`
-
-The merged adversary for the single-user phase: takes the proposal's own quality attributes
-(failure isolation, request latency, secrets containment) and tries to break each, naming
-risks, sensitivity points, and trade-offs. Split into Chaos + Sentinel when depth is needed.
-- **Challenges**: shared-event-loop blast radius; the session-mode connection as a finite
-  resource; PII flow source -> Postgres -> LLM; whether stated quality attributes actually
-  hold under the drawn structure.
-- **Reads**: the proposal's Quality attributes + system-design + cross-cutting.
-
-### Chaos - Resilience / Failure-Mode Adversary `[first-principles | Sonnet]`
-
-Breaker split out: SRE lens. "What dies, and what is the blast radius?" Single fault domains,
-restart-in-flight loss, dead-letter behavior, the scaling cliff. Summon when resilience is the
-crux.
-
-### Sentinel - Security & Trust-Boundary Adversary `[first-principles | Sonnet]`
-
-Breaker split out: STRIDE over trust boundaries. Secret residency, the browser cut, untrusted
-inbound data, the data-processor exposure. Summon when a change touches auth, secrets, or PII.
-
-### Rookie - Newcomer / Clarity Reader `[conformance | Haiku]`
-
-Reads the artifact cold, as a fresh engineer. "Could I act on this without asking anyone?"
-- **Challenges**: undefined terms, jargon, missing legend, ambiguity between role/container/sidecar.
-- **Reads**: the artifact alone, no prior context. Best as a final pass before promotion.
-
-### Devil - Devil's Advocate `[first-principles | Sonnet]`
-
-Standalone steelman of every rejected alternative. Normally folded into Atlas; summon alone for
-a quick "argue the other side" pass without the full architectural treatment.
-
 ### Chair - Moderator / Synthesizer `[orchestration | Opus]`
 
 Not a reviewer. Runs after the others, dedupes overlapping findings, ranks by severity,
@@ -153,11 +111,13 @@ triaged punch list with a single overall verdict.
 
 Named sets so you can summon by intent rather than listing nicknames each time.
 
-- **Quick sanity** (cheap, every iteration): `Pedant` + `Tracer`
-- **Fresh eyes** (right before promotion): `Rookie` + `Compass`
 - **Decision review** (before `apply` / promotion): `Canon` + `Atlas` + `Greybeard` + `Chair`
-- **Adversarial stress** (quality-sensitive design): `Breaker` + `Atlas` (or `Chaos` + `Sentinel`)
+- **Notation check** (C4 diagrams): `Pedant`
 - **Full panel** (major milestone): everyone, `Chair` synthesizes
+
+Need a security, resilience, or fresh-reader lens? Those are not wired here. Reach for the
+`/security-review` skill for trust-boundary review, and raise resilience or clarity concerns
+through Atlas (boundaries) or a directed ad-hoc agent rather than a phantom nickname.
 
 ## Conventions
 

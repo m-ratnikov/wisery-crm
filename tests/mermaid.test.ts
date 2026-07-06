@@ -5,7 +5,7 @@
 // published page. We use the official engine, not a third-party validator: the
 // dedicated validators either crash (mermaid-validate) or reimplement the grammar
 // and throw false positives on valid Mermaid (@probelabs/maid). See
-// docs/verification-gate.md (Stage 0 - the gate references this check).
+// docs/process/verification-gate.md (Stage 0 - the gate references this check).
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";

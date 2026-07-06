@@ -80,7 +80,7 @@ Exploration must not fight the production gate:
 
 - **Coverage**: `src/app/**` is already excluded (`vitest.config.ts`), so no per-file floor here.
 - **Duplication**: `**/prototype/**` is ignored in `.jscpd.json` (mockups repeat card/row markup
-  by nature). Rationale recorded in [docs/engineering.md](../../../docs/engineering.md#duplication-jscpd).
+  by nature). Rationale recorded in [docs/process/engineering.md](../../../docs/process/engineering.md#duplication-jscpd).
 
 It still typechecks, lints, and builds - it is real code, just unwired and ungated for coverage/dup.
 
